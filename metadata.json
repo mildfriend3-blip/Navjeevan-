@@ -1,0 +1,6 @@
+{
+  "name": "Navjeevan Plus Super Shop",
+  "description": "Quick-commerce app and franchise management platform for Navjeevan Plus Super Shop across Jalgaon, Shahada, Nandurbar, and Dhule.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
