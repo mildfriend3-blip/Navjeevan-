@@ -1,20 +1,33 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Town, Product, StoreInventory, Order, CartItem, OrderStatus, OrderItem } from '../types';
+import { Town, Product, StoreInventory, Order, CartItem, OrderStatus, OrderItem, LoggedInUser } from '../types';
 import { INITIAL_PRODUCTS, FRANCHISE_STORES, generateInitialInventories } from '../data/initialData';
 
 interface AppContextType {
   activeRole: 'customer' | 'manager' | 'rider';
   setActiveRole: (role: 'customer' | 'manager' | 'rider') => void;
+  currentUser: LoggedInUser | null;
+  loginUser: (phone: string, role: 'customer' | 'manager' | 'rider', name: string) => void;
+  logoutUser: () => void;
   currentTown: Town;
   setCurrentTown: (town: Town) => void;
+  selectedNeighborhood: string;
+  setSelectedNeighborhood: (neighborhood: string) => void;
+  flatDetails: string;
+  setFlatDetails: (details: string) => void;
+  deliveryTip: number;
+  setDeliveryTip: (tip: number) => void;
+  deliveryInstruction: string;
+  setDeliveryInstruction: (instruction: string) => void;
   inventories: { [town in Town]: StoreInventory };
   orders: Order[];
   cart: CartItem[];
+  products: Product[];
+  addProduct: (product: Omit<Product, 'id'>) => void;
   addToCart: (product: Product, localPrice: number) => void;
   removeFromCart: (productId: string) => void;
   updateCartQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
-  placeOrder: (customerName: string, customerAddress: string, customerPhone: string) => Order | null;
+  placeOrder: (customerName: string, customerAddress: string, customerPhone: string, storeId?: string) => Order | null;
   updateOrderStatus: (orderId: string, status: OrderStatus, riderName?: string, riderPhone?: string) => void;
   updateInventoryStock: (town: Town, productId: string, newStock: number) => void;
   updateInventoryPrice: (town: Town, productId: string, newPrice: number) => void;
@@ -27,6 +40,7 @@ const LOCAL_STORAGE_KEY_INVENTORIES = 'navjeevan_inventories';
 const LOCAL_STORAGE_KEY_ORDERS = 'navjeevan_orders';
 const LOCAL_STORAGE_KEY_TOWN = 'navjeevan_current_town';
 const LOCAL_STORAGE_KEY_ROLE = 'navjeevan_active_role';
+const LOCAL_STORAGE_KEY_PRODUCTS = 'navjeevan_products';
 
 // Initial pre-populated orders to make the app interactive and interesting immediately
 const getMockOrders = (): Order[] => {
@@ -72,17 +86,61 @@ const getMockOrders = (): Order[] => {
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // 0. User Auth State
+  const [currentUser, setCurrentUser] = useState<LoggedInUser | null>(() => {
+    const saved = localStorage.getItem('navjeevan_current_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing current user", e);
+      }
+    }
+    return null;
+  });
+
   // 1. Role State
   const [activeRole, setActiveRole] = useState<'customer' | 'manager' | 'rider'>(() => {
+    const savedUser = localStorage.getItem('navjeevan_current_user');
+    if (savedUser) {
+      try {
+        const u = JSON.parse(savedUser) as LoggedInUser;
+        return u.role;
+      } catch (e) {}
+    }
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY_ROLE);
-    return (saved as any) || 'manager';
+    return (saved as any) || 'customer';
   });
+
+  const loginUser = (phone: string, role: 'customer' | 'manager' | 'rider', name: string) => {
+    const u: LoggedInUser = { phone, role, name };
+    setCurrentUser(u);
+    setActiveRole(role);
+    localStorage.setItem('navjeevan_current_user', JSON.stringify(u));
+    localStorage.setItem(LOCAL_STORAGE_KEY_ROLE, role);
+  };
+
+  const logoutUser = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('navjeevan_current_user');
+  };
 
   // 2. Location State
   const [currentTown, setCurrentTown] = useState<Town>(() => {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY_TOWN);
     return (saved as any) || 'Shahada';
   });
+
+  const [selectedNeighborhood, setSelectedNeighborhood] = useState<string>(() => {
+    return localStorage.getItem('navjeevan_selected_neighborhood') || '';
+  });
+
+  const [flatDetails, setFlatDetails] = useState<string>(() => {
+    return localStorage.getItem('navjeevan_flat_details') || 'Apartment 204, Block-B, near landmark';
+  });
+
+  const [deliveryTip, setDeliveryTip] = useState<number>(0);
+  const [deliveryInstruction, setDeliveryInstruction] = useState<string>('Avoid ringing bell');
 
   // 3. Inventories State
   const [inventories, setInventories] = useState<{ [town in Town]: StoreInventory }>(() => {
@@ -110,6 +168,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return getMockOrders();
   });
 
+  // 4.5. Products State
+  const [products, setProducts] = useState<Product[]>(() => {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_PRODUCTS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing products, generating defaults", e);
+      }
+    }
+    return INITIAL_PRODUCTS;
+  });
+
   // 5. Cart State (Customer local state)
   const [cart, setCart] = useState<CartItem[]>([]);
 
@@ -119,8 +190,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [activeRole]);
 
   useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_KEY_PRODUCTS, JSON.stringify(products));
+  }, [products]);
+
+  useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_KEY_TOWN, currentTown);
   }, [currentTown]);
+
+  useEffect(() => {
+    localStorage.setItem('navjeevan_selected_neighborhood', selectedNeighborhood);
+  }, [selectedNeighborhood]);
+
+  useEffect(() => {
+    localStorage.setItem('navjeevan_flat_details', flatDetails);
+  }, [flatDetails]);
 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_KEY_INVENTORIES, JSON.stringify(inventories));
@@ -167,13 +250,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const placeOrder = (
     customerName: string,
     customerAddress: string,
-    customerPhone: string
+    customerPhone: string,
+    storeId?: string
   ): Order | null => {
     if (cart.length === 0) return null;
 
     const subtotal = cart.reduce((acc, item) => acc + item.localPrice * item.quantity, 0);
     const deliveryFee = subtotal > 200 ? 0 : 15; // Free delivery over Rs.200
-    const total = subtotal + deliveryFee;
+    const handlingFeeVal = 10;
+    const total = subtotal + deliveryFee + handlingFeeVal + deliveryTip;
 
     const orderItems: OrderItem[] = cart.map((item) => ({
       productId: item.product.id,
@@ -185,15 +270,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Generate unique random Indian-format order ID
     const orderId = `NP-ORD-${Math.floor(10000 + Math.random() * 90000)}`;
+    const finalStoreId = storeId ? storeId.toLowerCase() : currentTown.toLowerCase();
 
     const newOrder: Order = {
       id: orderId,
-      storeId: currentTown,
+      storeId: finalStoreId,
       items: orderItems,
       subtotal,
       deliveryFee,
+      handlingFee: handlingFeeVal,
+      deliveryTip,
+      deliveryInstruction: deliveryInstruction || undefined,
       total,
-      status: 'placed',
+      status: 'PLACED',
       customerName,
       customerAddress,
       customerPhone,
@@ -202,9 +291,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       estimatedDeliveryTime: 12, // default quick-commerce time
     };
 
+    // Find the correct capitalized town to update the inventory
+    const normalizedTown = (Object.keys(inventories) as Town[]).find(
+      (t) => t.toLowerCase() === finalStoreId
+    ) || currentTown;
+
     // Update inventory stock levels for this town
     setInventories((prev) => {
-      const townInventory = { ...prev[currentTown] };
+      const townInventory = { ...prev[normalizedTown] };
       cart.forEach((item) => {
         if (townInventory[item.product.id]) {
           const currentStock = townInventory[item.product.id].stock;
@@ -219,7 +313,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       return {
         ...prev,
-        [currentTown]: townInventory,
+        [normalizedTown]: townInventory,
       };
     });
 
@@ -247,9 +341,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (riderPhone) updated.riderPhone = riderPhone;
 
           // Adjust simulated delivery countdown based on state changes
-          if (status === 'out-for-delivery') {
+          if (status === 'out-for-delivery' || status === 'DISPATCHED' || status === 'dispatched') {
             updated.estimatedDeliveryTime = 6;
-          } else if (status === 'delivered') {
+          } else if (status === 'delivered' || status === 'DELIVERED') {
             updated.estimatedDeliveryTime = 0;
           }
 
@@ -295,12 +389,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
+  // Add new product from Manager Dashboard
+  const addProduct = (newProdData: Omit<Product, 'id'>) => {
+    const id = `${newProdData.category}-${Date.now()}`;
+    const newProduct: Product = { ...newProdData, id };
+
+    // 1. Add to products list
+    setProducts((prev) => [...prev, newProduct]);
+
+    // 2. Initialize inventory for this product in ALL towns
+    setInventories((prev) => {
+      const updated = { ...prev };
+      (Object.keys(updated) as Town[]).forEach((town) => {
+        updated[town] = {
+          ...updated[town],
+          [id]: {
+            price: newProduct.price,
+            stock: 24, // Default initial stock count as requested
+            isAvailable: true
+          }
+        };
+      });
+      return updated;
+    });
+  };
+
   // Reset helper
   const resetAllData = () => {
     localStorage.removeItem(LOCAL_STORAGE_KEY_INVENTORIES);
     localStorage.removeItem(LOCAL_STORAGE_KEY_ORDERS);
     localStorage.removeItem(LOCAL_STORAGE_KEY_TOWN);
     localStorage.removeItem(LOCAL_STORAGE_KEY_ROLE);
+    localStorage.removeItem(LOCAL_STORAGE_KEY_PRODUCTS);
+    setProducts(INITIAL_PRODUCTS);
     setInventories(generateInitialInventories());
     setOrders(getMockOrders());
     setCart([]);
@@ -313,11 +434,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       value={{
         activeRole,
         setActiveRole,
+        currentUser,
+        loginUser,
+        logoutUser,
         currentTown,
         setCurrentTown,
+        selectedNeighborhood,
+        setSelectedNeighborhood,
+        flatDetails,
+        setFlatDetails,
+        deliveryTip,
+        setDeliveryTip,
+        deliveryInstruction,
+        setDeliveryInstruction,
         inventories,
         orders,
         cart,
+        products,
+        addProduct,
         addToCart,
         removeFromCart,
         updateCartQuantity,

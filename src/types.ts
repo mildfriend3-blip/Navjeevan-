@@ -37,7 +37,7 @@ export interface FranchiseStore {
   deliveryTimeMins: number; // e.g., 10-15 mins
 }
 
-export type OrderStatus = 'placed' | 'preparing' | 'out-for-delivery' | 'delivered' | 'cancelled';
+export type OrderStatus = 'placed' | 'preparing' | 'accepted' | 'out-for-delivery' | 'delivered' | 'cancelled' | 'PLACED' | 'DISPATCHED' | 'DELIVERED' | 'dispatched';
 
 export interface OrderItem {
   productId: string;
@@ -49,10 +49,13 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
-  storeId: Town;
+  storeId: Town | string;
   items: OrderItem[];
   subtotal: number;
   deliveryFee: number;
+  handlingFee?: number;
+  deliveryTip?: number;
+  deliveryInstruction?: string;
   total: number;
   status: OrderStatus;
   customerName: string;
@@ -69,4 +72,10 @@ export interface CartItem {
   product: Product;
   quantity: number;
   localPrice: number;
+}
+
+export interface LoggedInUser {
+  phone: string;
+  name: string;
+  role: 'customer' | 'manager' | 'rider';
 }

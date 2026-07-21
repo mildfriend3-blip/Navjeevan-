@@ -65,6 +65,14 @@ export const CustomerApp: React.FC = () => {
   const {
     currentTown,
     setCurrentTown,
+    selectedNeighborhood,
+    setSelectedNeighborhood,
+    flatDetails,
+    setFlatDetails,
+    deliveryTip,
+    setDeliveryTip,
+    deliveryInstruction,
+    setDeliveryInstruction,
     inventories,
     cart,
     addToCart,
@@ -104,8 +112,6 @@ export const CustomerApp: React.FC = () => {
 
   // Checkout states
   const [isCheckingOut, setIsCheckingOut] = useState(false);
-  const [selectedNeighborhood, setSelectedNeighborhood] = useState<string>('');
-  const [addressDetails, setAddressDetails] = useState('Apartment 204, Block-B, near landmark');
   const [paymentMethod, setPaymentMethod] = useState<'gpay' | 'phonepe' | 'upi'>('gpay');
   const [upiId, setUpiId] = useState('john.doe@okaxis');
   
@@ -125,17 +131,17 @@ export const CustomerApp: React.FC = () => {
   // Sync selectedNeighborhood when town changes
   React.useEffect(() => {
     const list = NEIGHBORHOODS[currentTown] || [];
-    if (list.length > 0) {
+    if (list.length > 0 && !selectedNeighborhood) {
       setSelectedNeighborhood(list[0]);
     }
-  }, [currentTown]);
+  }, [currentTown, selectedNeighborhood, setSelectedNeighborhood]);
 
   // Update compiled address when details or neighborhood changes
   React.useEffect(() => {
     const neighbor = selectedNeighborhood || 'Main Colony';
-    const compiled = `${addressDetails ? addressDetails + ', ' : ''}${neighbor}, ${currentTown}`;
+    const compiled = `${flatDetails ? flatDetails + ', ' : ''}${neighbor}, ${currentTown}`;
     setCustomerAddress(compiled);
-  }, [selectedNeighborhood, addressDetails, currentTown]);
+  }, [selectedNeighborhood, flatDetails, currentTown]);
 
   const activeStore = useMemo(() => {
     return FRANCHISE_STORES.find(s => s.id === currentTown) || FRANCHISE_STORES[0];
@@ -165,7 +171,7 @@ export const CustomerApp: React.FC = () => {
 
   // Active customer orders for live tracking
   const customerOrders = useMemo(() => {
-    return orders.filter(o => o.storeId === currentTown);
+    return orders.filter(o => o.storeId?.toLowerCase() === currentTown?.toLowerCase());
   }, [orders, currentTown]);
 
   const activeTrackingOrder = useMemo(() => {
@@ -173,20 +179,22 @@ export const CustomerApp: React.FC = () => {
       return orders.find(o => o.id === trackingOrderId);
     }
     // Default to the most recent incomplete order if there is one
-    const incomplete = customerOrders.find(o => o.status !== 'delivered' && o.status !== 'cancelled');
+    const incomplete = customerOrders.find(o => o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'DELIVERED');
     if (incomplete) return incomplete;
     // Otherwise fallback to most recent placed
     return customerOrders[0] || null;
   }, [orders, customerOrders, trackingOrderId]);
 
-  const categories: { id: Category | 'all'; label: string; emoji: string; color: string }[] = [
-    { id: 'all', label: 'All Items', emoji: '🏬', color: 'from-slate-600 to-slate-800' },
-    { id: 'fruits-veg', label: 'Fruits & Veg', emoji: '🥭', color: 'from-orange-500 to-amber-500' },
-    { id: 'dairy-bakery', label: 'Dairy & Eggs', emoji: '🥛', color: 'from-blue-500 to-indigo-500' },
-    { id: 'grocery', label: 'Grocery Staples', emoji: '🌾', color: 'from-yellow-500 to-amber-600' },
-    { id: 'snacks-beverages', label: 'Snacks & Drinks', emoji: '🍪', color: 'from-red-400 to-pink-500' },
-    { id: 'personal-care', label: 'Personal Care', emoji: '🧴', color: 'from-teal-400 to-emerald-500' },
-    { id: 'household', label: 'Household', emoji: '🧼', color: 'from-purple-400 to-indigo-500' },
+  const categories: { id: Category | 'all'; label: string; emoji: string; color: string; bg: string }[] = [
+    { id: 'all', label: 'All Items', emoji: '🏬', color: 'from-slate-700 to-slate-900', bg: 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100' },
+    { id: 'fruits-veg', label: 'Fresh Vegetables & Fruits', emoji: '🥦', color: 'from-emerald-400 to-green-600', bg: 'bg-emerald-50/70 border-emerald-100/80 text-emerald-900 hover:bg-emerald-50' },
+    { id: 'dairy-bakery', label: 'Dairy & Bread', emoji: '🥛', color: 'from-blue-400 to-indigo-600', bg: 'bg-blue-50/70 border-blue-100/80 text-blue-900 hover:bg-blue-50' },
+    { id: 'grocery', label: 'Instant Food & Noodles', emoji: '🍜', color: 'from-amber-400 to-orange-500', bg: 'bg-amber-50/70 border-amber-100/80 text-amber-900 hover:bg-amber-50' },
+    { id: 'snacks-beverages', label: 'Cold Drinks & Juices', emoji: '🥤', color: 'from-red-400 to-pink-600', bg: 'bg-red-50/70 border-red-100/80 text-red-900 hover:bg-red-50' },
+    { id: 'snacks-beverages', label: 'Snacks & Munchies', emoji: '🍪', color: 'from-yellow-400 to-amber-600', bg: 'bg-yellow-50/70 border-yellow-100/80 text-yellow-900 hover:bg-yellow-50' },
+    { id: 'personal-care', label: 'Bath & Body', emoji: '🧴', color: 'from-teal-400 to-cyan-600', bg: 'bg-teal-50/70 border-teal-100/80 text-teal-900 hover:bg-teal-50' },
+    { id: 'household', label: 'Cleaning Essentials', emoji: '🧼', color: 'from-purple-400 to-indigo-600', bg: 'bg-purple-50/70 border-purple-100/80 text-purple-900 hover:bg-purple-50' },
+    { id: 'dairy-bakery', label: 'Sweets & Paan', emoji: '🍬', color: 'from-fuchsia-400 to-pink-600', bg: 'bg-fuchsia-50/70 border-fuchsia-100/80 text-fuchsia-900 hover:bg-fuchsia-50' },
   ];
 
   const handleCheckout = (e?: React.FormEvent) => {
@@ -201,14 +209,14 @@ export const CustomerApp: React.FC = () => {
     }
 
     setCheckoutError('');
-    const placed = placeOrder(customerName, customerAddress, customerPhone);
+    const placed = placeOrder(customerName, customerAddress, customerPhone, currentTown);
     if (placed) {
       setJustPlacedOrder(placed);
       setTrackingOrderId(placed.id);
       setShowOrderSuccess(true);
       setIsCartOpen(false);
       setIsCheckingOut(false);
-      setAddressDetails('Apartment 204, Block-B, near landmark');
+      setFlatDetails('Apartment 204, Block-B, near landmark');
       setPromoCode('');
       setAppliedDiscount(0);
       setPromoSuccess('');
@@ -355,8 +363,8 @@ export const CustomerApp: React.FC = () => {
                   <input
                     type="text"
                     required
-                    value={addressDetails}
-                    onChange={(e) => setAddressDetails(e.target.value)}
+                    value={flatDetails}
+                    onChange={(e) => setFlatDetails(e.target.value)}
                     placeholder="e.g. Flat 302, Wing-A, Royal Heights, behind Ganesh Temple"
                     className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-3 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
                   />
@@ -552,8 +560,8 @@ export const CustomerApp: React.FC = () => {
                       <span>₹{cartSubtotal}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Franchise Packing Fee</span>
-                      <span>₹5</span>
+                      <span>Handling & Packaging Fee</span>
+                      <span>₹10</span>
                     </div>
                     <div className="flex justify-between">
                       <span>10-Min Delivery Charge</span>
@@ -561,15 +569,21 @@ export const CustomerApp: React.FC = () => {
                         {deliveryFee === 0 ? <span className="text-emerald-600 font-bold">FREE</span> : `₹${deliveryFee}`}
                       </span>
                     </div>
+                    {deliveryTip > 0 && (
+                      <div className="flex justify-between text-slate-600">
+                        <span>Rider Delivery Tip</span>
+                        <span>₹{deliveryTip}</span>
+                      </div>
+                    )}
                     {appliedDiscount > 0 && (
                       <div className="flex justify-between text-emerald-600 font-bold">
                         <span>Promo Discount</span>
                         <span>-₹{appliedDiscount}</span>
                       </div>
                     )}
-                    <div className="flex justify-between pt-2 border-t border-dashed border-slate-200 text-xs font-black text-slate-800">
+                    <div className="flex justify-between pt-2 border-t border-dashed border-slate-200 text-xs font-black text-slate-800 font-sans">
                       <span>Grand Total</span>
-                      <span className="text-emerald-700 text-sm font-black">₹{Math.max(0, cartSubtotal + deliveryFee + 5 - appliedDiscount)}</span>
+                      <span className="text-emerald-700 text-sm font-black">₹{Math.max(0, cartSubtotal + deliveryFee + 10 + deliveryTip - appliedDiscount)}</span>
                     </div>
                   </div>
                 </div>
@@ -585,7 +599,7 @@ export const CustomerApp: React.FC = () => {
                   onClick={() => handleCheckout()}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm py-3.5 rounded-2xl shadow-md shadow-emerald-600/10 transition-all flex items-center justify-center gap-1.5 hover:scale-[1.01]"
                 >
-                  Pay ₹{Math.max(0, cartSubtotal + deliveryFee + 5 - appliedDiscount)} & Place Order <ArrowRight size={16} />
+                  Pay ₹{Math.max(0, cartSubtotal + deliveryFee + 10 + deliveryTip - appliedDiscount)} & Place Order <ArrowRight size={16} />
                 </button>
 
                 <div className="text-center">
@@ -689,31 +703,44 @@ export const CustomerApp: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
             {/* Left main area (Storefront Catalog) */}
-            <div className="lg:col-span-8 space-y-6">
-              {/* Categories Horizontal Selector */}
-              <div className="flex gap-2.5 overflow-x-auto pb-3.5 scrollbar-none">
-                {categories.map((cat) => {
-                  const isActive = selectedCategory === cat.id;
-                  return (
-                    <motion.button
-                      key={cat.id}
-                      id={`cat-btn-${cat.id}`}
-                      whileHover={{ scale: 1.04 }}
-                      whileTap={{ scale: 0.96 }}
-                      onClick={() => setSelectedCategory(cat.id)}
-                      className={`flex items-center space-x-2 px-5 py-3 rounded-2xl text-xs font-black whitespace-nowrap transition-all border ${
-                        isActive
-                          ? 'bg-slate-900 text-white border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.35)]'
-                          : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50/80 hover:border-emerald-500/50'
-                      }`}
-                    >
-                      <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg text-sm bg-gradient-to-br ${cat.color} text-white shadow-xs`}>
-                        {cat.emoji}
-                      </span>
-                      <span>{cat.label}</span>
-                    </motion.button>
-                  );
-                })}
+            <div className={`${activeTrackingOrder ? 'lg:col-span-8' : 'lg:col-span-12'} space-y-6`}>
+              
+              {/* Zepto Category Grid */}
+              <div className="bg-white rounded-3xl p-5 border border-slate-200/50 shadow-xs space-y-4">
+                <div className="flex items-center gap-1.5 border-b border-slate-100 pb-3">
+                  <span className="text-sm font-black text-slate-800 tracking-tight">Shop by Category</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3">
+                  {categories.map((cat, idx) => {
+                    const isActive = selectedCategory === cat.id;
+                    return (
+                      <motion.button
+                        key={idx}
+                        id={`cat-grid-${cat.id}-${idx}`}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setSelectedCategory(cat.id)}
+                        className={`p-3 rounded-2xl border transition-all flex flex-col items-center justify-center text-center gap-2 relative h-24 overflow-hidden group ${cat.bg} ${
+                          isActive 
+                            ? 'ring-2 ring-emerald-600 shadow-md scale-[1.01] border-transparent bg-gradient-to-br from-white to-emerald-50/20' 
+                            : 'shadow-xs hover:shadow-md'
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${cat.color} text-white flex items-center justify-center text-lg shadow-xs group-hover:scale-105 transition-transform duration-300`}>
+                          {cat.emoji}
+                        </div>
+                        <span className="text-[10px] font-black leading-tight text-slate-800 line-clamp-2">
+                          {cat.label}
+                        </span>
+                        {isActive && (
+                          <div className="absolute top-1 right-1 bg-emerald-600 text-white p-0.5 rounded-full shadow-xs">
+                            <Check size={8} className="stroke-[4]" />
+                          </div>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Search Box */}
@@ -762,7 +789,7 @@ export const CustomerApp: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {filteredProducts.map((product) => {
                     const localInfo = storeInventory[product.id] || { price: product.price, stock: 20, isAvailable: true };
                     const inCart = cart.find(item => item.product.id === product.id);
@@ -791,7 +818,7 @@ export const CustomerApp: React.FC = () => {
                               className="w-full h-full object-cover rounded-2xl group-hover:scale-105 transition-transform duration-500"
                               referrerPolicy="no-referrer"
                               onError={() => {
-                                setFailedImages(prev => ({ ...prev, [product.id]: true }));
+                                  setFailedImages(prev => ({ ...prev, [product.id]: true }));
                               }}
                             />
                           ) : (
@@ -905,163 +932,9 @@ export const CustomerApp: React.FC = () => {
               )}
             </div>
 
-            {/* Right side panel (Cart & Live Tracking) */}
-            <div className="lg:col-span-4 space-y-6">
-              
-              {/* Cart Panel */}
-              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-md p-5 sticky top-24">
-                
-                {/* Quick Header toggler */}
-                <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
-                  <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
-                    <ShoppingCart size={18} className="text-emerald-600" /> My Cart
-                  </h2>
-                  {cart.length > 0 && (
-                    <button
-                      onClick={clearCart}
-                      className="text-xs font-semibold text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
-                    >
-                      <Trash2 size={13} /> Clear
-                    </button>
-                  )}
-                </div>
-
-                {cart.length === 0 ? (
-                  <div className="py-8 text-center">
-                    <div className="bg-slate-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto text-slate-400 mb-3">
-                      <ShoppingCart size={20} />
-                    </div>
-                    <p className="text-slate-500 text-xs font-medium">Your shopping bag is empty.</p>
-                    <p className="text-[11px] text-slate-400 mt-1">Select products to pack in your 10-minute order!</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Cart list */}
-                    <div className="max-h-64 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
-                      {cart.map((item) => (
-                        <div key={item.product.id} className="flex justify-between items-center text-sm gap-3">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div 
-                              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white text-[10px]"
-                              style={{ background: item.product.imageColor }}
-                            >
-                              <ProductIcon name={item.product.icon} size={14} />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-bold text-slate-800 truncate text-xs">{item.product.name}</p>
-                              <p className="text-[10px] text-slate-400 font-medium">{item.product.unit} · ₹{item.localPrice}</p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-xs font-black text-slate-700 font-mono">₹{item.localPrice * item.quantity}</span>
-                            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden scale-90">
-                              <button
-                                onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
-                                className="p-1 hover:bg-slate-50 text-slate-500"
-                              >
-                                <Minus size={10} />
-                              </button>
-                              <span className="px-1.5 text-[11px] font-bold font-mono">{item.quantity}</span>
-                              <button
-                                onClick={() => {
-                                  const storeItemStock = storeInventory[item.product.id]?.stock || 0;
-                                  if (item.quantity >= storeItemStock) {
-                                    alert(`Only ${storeItemStock} units available.`);
-                                    return;
-                                  }
-                                  updateCartQuantity(item.product.id, item.quantity + 1);
-                                }}
-                                className="p-1 hover:bg-slate-50 text-slate-500"
-                              >
-                                <Plus size={10} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Dynamic Animating Gradient Progress Bar for FREE Delivery */}
-                    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 shadow-xs space-y-2.5">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-extrabold text-slate-700 flex items-center gap-1.5">
-                          <Sparkles size={14} className="text-orange-500 animate-pulse" />
-                          {cartSubtotal >= 200 ? (
-                            <span className="text-emerald-700 font-black">🎉 FREE Delivery Unlocked!</span>
-                          ) : (
-                            <span className="text-slate-600 font-bold">
-                              Add <span className="text-orange-500 font-black">₹{200 - cartSubtotal}</span> more for Free Delivery!
-                            </span>
-                          )}
-                        </span>
-                        <span className="font-mono text-[10px] font-black text-slate-400">
-                          {Math.min(100, Math.round((cartSubtotal / 200) * 100))}%
-                        </span>
-                      </div>
-                      
-                      {/* The progress bar track */}
-                      <div className="relative w-full h-3.5 bg-slate-200/70 rounded-full overflow-hidden p-[2px] border border-slate-300/30">
-                        {/* Animating gradient bar filling up */}
-                        <motion.div
-                          initial={{ width: '0%' }}
-                          animate={{ width: `${Math.min(100, (cartSubtotal / 200) * 100)}%` }}
-                          transition={{ type: 'spring', stiffness: 80, damping: 15 }}
-                          className="h-full rounded-full bg-gradient-to-r from-orange-500 via-amber-400 to-emerald-500 relative overflow-hidden"
-                        >
-                          {/* Light shimmer overlay scanning across */}
-                          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.4)_50%,rgba(255,255,255,0)_100%)] animate-shimmer-fast" style={{ backgroundSize: '200% 100%' }} />
-                        </motion.div>
-                      </div>
-                      
-                      <div className="flex justify-between text-[9px] font-bold text-slate-400 px-0.5">
-                        <span>₹0</span>
-                        <span>Free 10-Min Delivery Goal (₹200)</span>
-                      </div>
-                    </div>
-
-                    {/* Pricing Summary */}
-                    <div className="bg-slate-50 rounded-2xl p-4 space-y-2 text-xs font-medium text-slate-600 border border-slate-200/50">
-                      <div className="flex justify-between">
-                        <span>Items Subtotal</span>
-                        <span className="font-mono text-slate-800 font-bold">₹{cartSubtotal}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Quick Delivery Fee</span>
-                        <span className="font-mono text-slate-800 font-bold">
-                          {deliveryFee === 0 ? <span className="text-emerald-600 font-extrabold">FREE</span> : `₹${deliveryFee}`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between pt-2 border-t border-slate-200/80 text-sm font-black text-slate-800">
-                        <span>Grand Total</span>
-                        <span className="font-mono text-emerald-600 text-lg drop-shadow-[0_0_6px_rgba(16,185,129,0.2)]">₹{cartTotal}</span>
-                      </div>
-                    </div>
-
-                    {/* Proceed to Checkout CTA */}
-                    <div className="pt-1">
-                      {cartSubtotal < activeStore.minOrderValue ? (
-                        <div className="text-center bg-amber-50 border border-amber-100 rounded-2xl p-3.5 text-xs font-bold text-amber-800 shadow-inner">
-                          Min. Order value for {currentTown} store is ₹{activeStore.minOrderValue}. Please add ₹{activeStore.minOrderValue - cartSubtotal} more.
-                        </div>
-                      ) : (
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          id="go-to-checkout-btn"
-                          onClick={() => setIsCheckingOut(true)}
-                          className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-slate-950 font-black text-sm py-4 rounded-2xl shadow-lg shadow-orange-500/25 transition-all flex items-center justify-center gap-1.5 border border-orange-400/40"
-                        >
-                          Proceed to Checkout <ArrowRight size={14} className="stroke-[3]" />
-                        </motion.button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Active Tracker Panel */}
-              {activeTrackingOrder ? (
+            {/* Right side panel (Active Tracker Only) */}
+            {activeTrackingOrder && (
+              <div className="lg:col-span-4 space-y-6">
                 <div className="bg-slate-900 text-white rounded-3xl p-5 border border-slate-800 shadow-xl space-y-4 relative overflow-hidden">
                   <div className="absolute right-0 top-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl pointer-events-none" />
                   
@@ -1233,9 +1106,8 @@ export const CustomerApp: React.FC = () => {
                     </div>
                   )}
                 </div>
-              ) : null}
-
-            </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -1291,6 +1163,335 @@ export const CustomerApp: React.FC = () => {
               </button>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Zepto-Style Bottom Floating Cart Bar */}
+      {cart.length > 0 && !isCheckingOut && !isCartOpen && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 z-40">
+          <motion.button
+            id="floating-cart-bar"
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 50, opacity: 0 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setIsCartOpen(true)}
+            className="w-full bg-slate-900 text-white rounded-2xl p-4 shadow-2xl flex items-center justify-between border border-slate-800 relative overflow-hidden group"
+          >
+            {/* Ambient shimmer */}
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.06)_50%,rgba(255,255,255,0)_100%)] animate-shimmer-fast" style={{ backgroundSize: '200% 100%' }} />
+            
+            <div className="flex items-center gap-3 relative z-10">
+              <div className="bg-emerald-500 text-slate-950 p-2 rounded-xl flex items-center justify-center">
+                <ShoppingCart size={18} className="stroke-[2.5]" />
+              </div>
+              <div className="text-left">
+                <span className="block text-xs font-black text-white">{cart.length} Item{cart.length > 1 ? 's' : ''} added</span>
+                <span className="text-[10px] text-slate-400 font-semibold font-mono">⚡ Fresh from nearest store</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 relative z-10">
+              <div className="text-right mr-1">
+                <span className="block text-[9px] text-slate-400 uppercase font-black tracking-widest font-mono">Grand Total</span>
+                <span className="text-sm font-black text-emerald-400 font-mono">₹{cartSubtotal + (cartSubtotal > 200 ? 0 : 15) + 10 + deliveryTip}</span>
+              </div>
+              <div className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-md">
+                <span>View Cart</span>
+                <ArrowRight size={13} className="stroke-[3]" />
+              </div>
+            </div>
+          </motion.button>
+        </div>
+      )}
+
+      {/* Zepto-Style Sliding Cart Drawer */}
+      <AnimatePresence>
+        {isCartOpen && (
+          <>
+            {/* Backdrop Blur Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsCartOpen(false)}
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50"
+            />
+
+            {/* Sliding Drawer Container */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 26, stiffness: 220 }}
+              className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-50 flex flex-col border-l border-slate-100"
+            >
+              {/* Drawer Header */}
+              <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="bg-emerald-100 text-emerald-700 p-2 rounded-xl">
+                    <ShoppingCart size={18} className="stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 tracking-tight">My Basket</h3>
+                    <p className="text-[10px] text-slate-500 font-medium">⚡ {cart.length} item{cart.length > 1 ? 's' : ''} ready to pack</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {cart.length > 0 && (
+                    <button
+                      onClick={clearCart}
+                      className="text-[11px] font-black text-slate-400 hover:text-red-500 flex items-center gap-1 bg-white border border-slate-200/60 px-2.5 py-1.5 rounded-xl transition-all"
+                    >
+                      <Trash2 size={11} /> Clear All
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsCartOpen(false)}
+                    className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 rounded-xl transition-all"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Drawer Content */}
+              {cart.length === 0 ? (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-slate-50/20">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-slate-300 mb-4 animate-bounce">
+                    <ShoppingBag size={28} />
+                  </div>
+                  <h4 className="text-base font-black text-slate-800">Your basket is empty</h4>
+                  <p className="text-xs text-slate-500 max-w-xs mt-1">
+                    Add fresh vegetables, dairy, milk, masala, or biscuits from Navjeevan Plus catalog to start!
+                  </p>
+                  <button
+                    onClick={() => setIsCartOpen(false)}
+                    className="mt-6 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black px-6 py-3 rounded-2xl shadow-md transition-all"
+                  >
+                    Browse Grocery items
+                  </button>
+                </div>
+              ) : (
+                <div className="flex-grow overflow-y-auto p-4 space-y-5 scrollbar-thin">
+                  
+                  {/* Superfast Delivery Banner */}
+                  <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-2xl p-4 border border-emerald-500/20 relative overflow-hidden flex items-center gap-3">
+                    <div className="absolute right-0 top-0 opacity-10 font-mono text-[70px] select-none font-black translate-x-3 translate-y-3">10</div>
+                    <div className="bg-emerald-600 text-white p-2.5 rounded-xl flex items-center justify-center animate-pulse shadow-md">
+                      <Clock size={18} className="stroke-[2.5]" />
+                    </div>
+                    <div>
+                      <span className="block text-[9px] uppercase font-black text-emerald-800 tracking-wider font-mono">Superfast Delivery</span>
+                      <p className="text-xs font-black text-slate-800 mt-0.5">Arriving in <span className="text-emerald-700">10 Mins</span> guaranteed!</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 font-medium">To: {currentTown} ({selectedNeighborhood})</p>
+                    </div>
+                  </div>
+
+                  {/* Cart Items List */}
+                  <div className="space-y-3.5">
+                    <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 font-sans">Packed Items</span>
+                    <div className="space-y-3">
+                      {cart.map((item) => {
+                        const localStock = inventories[currentTown]?.stockLevels[item.product.id] || 0;
+                        return (
+                          <div key={item.product.id} className="flex justify-between items-center gap-4 bg-slate-50/50 p-3 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {/* Thumbnail Image Container */}
+                              <div className="w-11 h-11 rounded-xl bg-white border border-slate-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                {item.product.imageUrl && !failedImages[item.product.id] ? (
+                                  <img 
+                                    src={item.product.imageUrl} 
+                                    alt={item.product.name} 
+                                    className="w-full h-full object-cover"
+                                    referrerPolicy="no-referrer"
+                                    onError={() => {
+                                      setFailedImages(prev => ({ ...prev, [item.product.id]: true }));
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center">
+                                    <span className="text-emerald-700 font-extrabold text-sm">{item.product.name.charAt(0)}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-extrabold text-slate-800 text-xs truncate leading-snug">{item.product.name}</p>
+                                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{item.product.unit} · ₹{item.localPrice}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <span className="text-xs font-black text-slate-800 font-mono">₹{item.localPrice * item.quantity}</span>
+                              <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl overflow-hidden shadow-xs h-7">
+                                <button
+                                  onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
+                                  className="px-2 hover:bg-slate-200/80 transition-colors text-slate-600 h-full flex items-center justify-center"
+                                >
+                                  <Minus size={9} className="stroke-[3]" />
+                                </button>
+                                <span className="px-1 text-[11px] font-black text-slate-800 font-mono min-w-[14px] text-center">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    if (item.quantity >= localStock) {
+                                      alert(`Only ${localStock} units available.`);
+                                      return;
+                                    }
+                                    updateCartQuantity(item.product.id, item.quantity + 1);
+                                  }}
+                                  className="px-2 hover:bg-slate-200/80 transition-colors text-slate-600 h-full flex items-center justify-center"
+                                >
+                                  <Plus size={9} className="stroke-[3]" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Delivery Instruction Selector Pills */}
+                  <div className="space-y-3">
+                    <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Rider Delivery Instructions</span>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { label: 'Avoid ringing bell', icon: '🔕' },
+                        { label: 'Leave at door', icon: '🚪' },
+                        { label: 'Leave with security', icon: '👮' },
+                        { label: 'Call before arriving', icon: '📞' }
+                      ].map((pill) => {
+                        const isSelected = deliveryInstruction === pill.label;
+                        return (
+                          <button
+                            key={pill.label}
+                            type="button"
+                            onClick={() => setDeliveryInstruction(isSelected ? '' : pill.label)}
+                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white border-transparent shadow-md shadow-emerald-600/10 scale-[1.01]'
+                                : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span>{pill.icon}</span>
+                            <span>{pill.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Delivery Tip Selector */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400">Support your local pilot</span>
+                      {deliveryTip > 0 && (
+                        <button 
+                          onClick={() => setDeliveryTip(0)}
+                          className="text-[10px] font-black text-red-500 hover:underline"
+                        >
+                          Remove Tip
+                        </button>
+                      )}
+                    </div>
+                    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/60 space-y-3">
+                      <p className="text-[11px] text-slate-500 leading-normal font-medium">
+                        Your delivery pilot goes above and beyond to pack and deliver fresh food in 10 minutes. 100% of tips go directly to them!
+                      </p>
+                      <div className="flex gap-2">
+                        {[20, 30, 50].map((val) => {
+                          const isSelected = deliveryTip === val;
+                          return (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setDeliveryTip(isSelected ? 0 : val)}
+                              className={`flex-1 py-2.5 rounded-xl text-xs font-black border transition-all flex flex-col items-center justify-center gap-0.5 ${
+                                isSelected
+                                  ? 'bg-slate-900 text-white border-transparent shadow-lg shadow-slate-900/15'
+                                  : 'bg-white text-slate-800 border-slate-200/80 hover:bg-slate-100'
+                              }`}
+                            >
+                              <span className="text-sm">₹{val}</span>
+                              <span className={`text-[9px] font-bold ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                {val === 20 ? 'Good' : val === 30 ? 'Awesome' : 'Super pilot'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bill Details Summary Card */}
+                  <div className="space-y-3">
+                    <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 font-sans">Detailed Bill receipt</span>
+                    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/60 space-y-2 text-xs font-medium text-slate-600 font-mono">
+                      <div className="flex justify-between">
+                        <span>Items Subtotal</span>
+                        <span className="font-bold text-slate-800">₹{cartSubtotal}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Franchise Packing Fee</span>
+                        <span className="font-bold text-slate-800">₹10</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Superfast Delivery Fee</span>
+                        <span className="font-bold text-slate-800">
+                          {deliveryFee === 0 ? <span className="text-emerald-600 font-extrabold font-sans">FREE</span> : `₹${deliveryFee}`}
+                        </span>
+                      </div>
+                      {deliveryTip > 0 && (
+                        <div className="flex justify-between text-slate-700">
+                          <span>Delivery Pilot Tip</span>
+                          <span className="font-bold text-slate-800">₹{deliveryTip}</span>
+                        </div>
+                      )}
+                      
+                      {/* Dynamic Free Delivery tracker inside Drawer */}
+                      {cartSubtotal < 200 && (
+                        <div className="pt-2 border-t border-dashed border-slate-200 mt-1 flex items-center justify-between text-[10px] text-orange-600 font-sans font-bold">
+                          <span>Add ₹{200 - cartSubtotal} more for FREE Delivery!</span>
+                          <span className="font-black font-mono">₹15 Delivery Charge</span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between pt-2.5 border-t border-slate-200 text-sm font-black text-slate-800 font-sans">
+                        <span>Grand Total</span>
+                        <span className="text-emerald-700 font-black text-base">₹{cartSubtotal + deliveryFee + 10 + deliveryTip}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* Drawer Bottom Action Panel */}
+              {cart.length > 0 && (
+                <div className="p-4 border-t border-slate-100 bg-white">
+                  {cartSubtotal < activeStore.minOrderValue ? (
+                    <div className="text-center bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs font-bold text-amber-800 shadow-inner">
+                      Min. Order value for {currentTown} store is ₹{activeStore.minOrderValue}. Please add ₹{activeStore.minOrderValue - cartSubtotal} more.
+                    </div>
+                  ) : (
+                    <button
+                      id="drawer-checkout-btn"
+                      onClick={() => {
+                        setIsCheckingOut(true);
+                        setIsCartOpen(false);
+                      }}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm py-4 rounded-2xl shadow-lg shadow-emerald-600/10 transition-all flex items-center justify-center gap-1.5 hover:scale-[1.01]"
+                    >
+                      Proceed to Checkout <ArrowRight size={16} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 

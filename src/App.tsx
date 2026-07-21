@@ -4,11 +4,16 @@ import { Header } from './components/Header';
 import { CustomerApp } from './components/CustomerApp';
 import { ManagerDashboard } from './components/ManagerDashboard';
 import { RiderApp } from './components/RiderApp';
+import { PhoneAuthScreen } from './components/PhoneAuthScreen';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Truck, ShoppingBag, Clock, Sparkles } from 'lucide-react';
 
 function AppContent() {
-  const { activeRole } = useApp();
+  const { activeRole, setActiveRole, currentUser, logoutUser } = useApp();
+
+  if (!currentUser) {
+    return <PhoneAuthScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans antialiased text-slate-800">
@@ -103,12 +108,26 @@ function AppContent() {
 
           <div className="pt-2 text-center text-[11px] text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-2">
             <span>© 2026 Navjeevan Plus Super Shop Ltd. All Rights Reserved.</span>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-4 items-center justify-center">
+              <button 
+                onClick={() => logoutUser()} 
+                className="hover:text-emerald-400 font-extrabold cursor-pointer transition-colors flex items-center gap-1 bg-slate-800 text-slate-200 px-2.5 py-1 rounded-lg border border-slate-700"
+              >
+                <ShieldCheck size={12} className="text-emerald-400" />
+                <span>Partner / Store Portal</span>
+              </button>
+              <span>·</span>
               <span className="hover:text-white cursor-pointer font-bold">Privacy Policy</span>
               <span>·</span>
               <span className="hover:text-white cursor-pointer font-bold">Franchise Terms</span>
               <span>·</span>
-              <span className="hover:text-white cursor-pointer font-bold">Rider Support</span>
+              <button 
+                onClick={() => logoutUser()} 
+                className="hover:text-white font-bold cursor-pointer bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700 flex items-center gap-1"
+              >
+                <Truck size={12} />
+                <span>Rider Portal</span>
+              </button>
             </div>
           </div>
         </div>
