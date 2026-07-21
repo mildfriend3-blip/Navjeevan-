@@ -11,6 +11,13 @@ import { ShieldCheck, Truck, ShoppingBag, Clock, Sparkles } from 'lucide-react';
 function AppContent() {
   const { activeRole, setActiveRole, currentUser, logoutUser } = useApp();
 
+  React.useEffect(() => {
+    const orders = localStorage.getItem('navjeevan_orders');
+    if (orders && (orders.includes('58893') || orders.includes('50893') || orders.includes('72901') || orders.includes('51034'))) {
+      localStorage.removeItem('navjeevan_orders');
+    }
+  }, []);
+
   if (!currentUser) {
     return <PhoneAuthScreen />;
   }

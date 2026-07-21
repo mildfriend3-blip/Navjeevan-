@@ -513,7 +513,7 @@ export const OrderTrackingDrawer: React.FC = () => {
     }
   }, [isLeafletLoaded, storeCoord, destLat, destLng, riderLat, riderLng, isOpen, activeOrder, routeCoordinates]);
 
-  if (!activeOrder) return null;
+  if (!activeOrder || activeOrder.status.toUpperCase() === 'DELIVERED' || activeOrder.status.toUpperCase() === 'CANCELLED') return null;
 
   // Active status formatters
   const statusLower = activeOrder.status.toLowerCase();

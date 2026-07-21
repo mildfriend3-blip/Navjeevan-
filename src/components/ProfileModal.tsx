@@ -502,6 +502,32 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                   </div>
                 </div>
 
+                {/* Emergency Developer Utility */}
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="bg-amber-50/50 border border-amber-200/60 rounded-2.5xl p-4 space-y-2.5 text-left">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-amber-100 text-amber-800 p-1.5 rounded-lg shrink-0">
+                        <Sparkles size={14} className="fill-amber-800" />
+                      </div>
+                      <div>
+                        <strong className="block text-xs font-black text-amber-950">Developer / Debug Options</strong>
+                        <span className="text-[10px] text-amber-700/80 font-bold">Purge local cache and clean stale order entries</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.removeItem('navjeevan_orders');
+                        localStorage.removeItem('navjeevan_inventories');
+                        window.location.reload();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-[0.99] cursor-pointer"
+                    >
+                      <span>Clear Stale Orders & Reset</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Logout Button */}
                 <div className="pt-2">
                   <button

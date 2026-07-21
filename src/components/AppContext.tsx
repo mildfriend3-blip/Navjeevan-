@@ -53,45 +53,7 @@ const LOCAL_STORAGE_KEY_PRODUCTS = 'navjeevan_products';
 
 // Initial pre-populated orders to make the app interactive and interesting immediately
 const getMockOrders = (): Order[] => {
-  return [
-    {
-      id: 'NP-ORD-72901',
-      storeId: 'Jalgaon',
-      items: [
-        { productId: 'fv-mango', name: 'Fresh Alphonso Mango (Hapus)', price: 349, quantity: 1, unit: '6 Units (Half Dozen)' },
-        { productId: 'db-milk', name: 'Amul Taaza Fresh Toned Milk', price: 28, quantity: 3, unit: '500ml Pack' }
-      ],
-      subtotal: 433,
-      deliveryFee: 15,
-      total: 448,
-      status: 'placed',
-      customerName: 'Rahul Patil',
-      customerAddress: 'Bunglow No. 5, Shahu Nagar, Jalgaon',
-      customerPhone: '+91 98230 45678',
-      createdAt: new Date(Date.now() - 4 * 60000).toISOString(), // 4 mins ago
-      updatedAt: new Date(Date.now() - 4 * 60000).toISOString(),
-      estimatedDeliveryTime: 8,
-    },
-    {
-      id: 'NP-ORD-51034',
-      storeId: 'Shahada',
-      items: [
-        { productId: 'db-bread', name: 'Wibs Premium Brown Bread', price: 45, quantity: 1, unit: '400g Pack' },
-        { productId: 'db-butter', name: 'Amul Salted Butter', price: 58, quantity: 1, unit: '100g Pack' },
-        { productId: 'sb-maggi', name: 'Maggi 2-Minute Masala Noodles', price: 14, quantity: 5, unit: '70g Single Pack' }
-      ],
-      subtotal: 173,
-      deliveryFee: 15,
-      total: 188,
-      status: 'preparing',
-      customerName: 'Aniket Shinde',
-      customerAddress: 'Row House 3, Purushottam Nagar, Shahada',
-      customerPhone: '+91 91580 98765',
-      createdAt: new Date(Date.now() - 10 * 60000).toISOString(), // 10 mins ago
-      updatedAt: new Date(Date.now() - 6 * 60000).toISOString(),
-      estimatedDeliveryTime: 5,
-    }
-  ];
+  return [];
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -277,9 +239,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY_ORDERS);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Filter out legacy mock orders if any lingered in localStorage
+          const cleaned = parsed.filter(o => !['58893', '50893', '72901', '51034'].some(id => o.id?.includes(id)));
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem(LOCAL_STORAGE_KEY_ORDERS, JSON.stringify(cleaned));
+          }
+          return cleaned;
+        }
       } catch (e) {
-        console.error("Error parsing orders, generating defaults", e);
+        console.error("Error parsing orders, resetting to empty array", e);
       }
     }
     return getMockOrders();
@@ -287,10 +257,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const activeOrders = useMemo(() => {
     return orders.filter(o => {
-      if (o.storeId?.toLowerCase() !== currentTown?.toLowerCase()) return false;
-      const s = o.status.toUpperCase();
-      // Strictly only allow: PLACED, PACKED, DISPATCHED, OUT_FOR_DELIVERY (including preparing, accepted, and out-for-delivery variations)
-      // NEVER allow DELIVERED or CANCELLED
+      const s = (o.status || '').toUpperCase();
       if (s === 'DELIVERED' || s === 'CANCELLED') return false;
       return (
         s === 'PLACED' ||
@@ -302,7 +269,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         s === 'OUT-FOR-DELIVERY'
       );
     });
-  }, [orders, currentTown]);
+  }, [orders]);
 
   // 4.5. Products State
   const [products, setProducts] = useState<Product[]>(() => {
@@ -508,8 +475,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     riderPhone?: string
   ) => {
     setOrders((prev) => {
+      const targetCleanId = (orderId || '').replace(/^NP-ORD-?/i, '');
       const nextOrders = prev.map((order) => {
-        if (order.id === orderId) {
+        const currentCleanId = (order.id || '').replace(/^NP-ORD-?/i, '');
+        if (order.id === orderId || currentCleanId === targetCleanId) {
           const updated: Partial<Order> = {
             status,
             updatedAt: new Date().toISOString(),
