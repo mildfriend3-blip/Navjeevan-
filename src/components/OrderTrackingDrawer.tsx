@@ -3,7 +3,7 @@ import { useApp } from './AppContext';
 import { Town, Order } from '../types';
 import { 
   MapPin, Clock, ChevronUp, ChevronDown, CheckCircle2, ShoppingBag, 
-  Phone, Navigation, Sparkles, Timer, Check, Store, Bike, ArrowRight
+  Phone, Navigation, Sparkles, Timer, Check, Store, Bike, ArrowRight, X, AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -15,7 +15,7 @@ const STORE_COORDINATES: Record<Town, { lat: number; lng: number }> = {
 };
 
 export const OrderTrackingDrawer: React.FC = () => {
-  const { orders, currentTown } = useApp();
+  const { orders, currentTown, updateOrderStatus, userLatLng } = useApp();
   const [isOpen, setIsOpen] = useState(false);
   const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
   const [isLeafletLoaded, setIsLeafletLoaded] = useState(false);
@@ -122,8 +122,8 @@ export const OrderTrackingDrawer: React.FC = () => {
 
   // Coordinates calculation
   const storeCoord = activeOrder ? (STORE_COORDINATES[activeOrder.storeId as Town] || STORE_COORDINATES[currentTown] || STORE_COORDINATES.Dhule) : STORE_COORDINATES.Dhule;
-  const destLat = activeOrder?.customerLat || (storeCoord.lat - 0.006);
-  const destLng = activeOrder?.customerLng || (storeCoord.lng + 0.006);
+  const destLat = activeOrder?.customerLat || userLatLng?.lat || (storeCoord.lat - 0.006);
+  const destLng = activeOrder?.customerLng || userLatLng?.lng || (storeCoord.lng + 0.006);
 
   const riderLat = storeCoord.lat + (destLat - storeCoord.lat) * (riderProgress / 100);
   const riderLng = storeCoord.lng + (destLng - storeCoord.lng) * (riderProgress / 100);
@@ -305,38 +305,39 @@ export const OrderTrackingDrawer: React.FC = () => {
 
   return (
     <>
-      {/* 1. STICKY BOTTOM BAR */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-100 shadow-[0_-8px_30px_rgb(0,0,0,0.06)] px-4 py-3 sm:px-6 lg:px-8 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div className="relative flex items-center justify-center">
-            <span className="absolute inline-flex h-4 w-4 rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
-            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <p className="font-sans font-extrabold text-sm text-slate-800">
-                {orderStatus === 'PLACED' && 'Order Placed'}
-                {(orderStatus === 'PREPARING' || orderStatus === 'ACCEPTED') && 'Preparing your order'}
-                {(orderStatus === 'DISPATCHED' || orderStatus === 'OUT-FOR-DELIVERY') && 'Rider out for delivery'}
-                {orderStatus === 'DELIVERED' && 'Delivered'}
-              </p>
-              <span className="text-xs text-slate-400 font-mono">({activeOrder.id})</span>
-            </div>
-            <div className="flex items-center space-x-1 text-slate-500 text-xs mt-0.5 font-sans">
-              <Clock className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Delivering in <b>{estimatedMin} mins</b></span>
-            </div>
-          </div>
-        </div>
-
-        <button 
+      {/* 1. STICKY FLOATING TRACKING PILL (WHEN MINIMIZED) */}
+      {!isOpen && (
+        <motion.div 
+          initial={{ y: 50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
           onClick={() => setIsOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold px-5 py-2.5 rounded-xl shadow-md shadow-emerald-200 hover:shadow-lg transition-all flex items-center space-x-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+          className="fixed bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-96 z-40 bg-slate-900 text-white p-4 rounded-2xl shadow-xl border border-slate-800 flex items-center justify-between cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 hover:shadow-2xl"
         >
-          <span>Track Live</span>
-          <Navigation className="h-3.5 w-3.5 animate-pulse" />
-        </button>
-      </div>
+          <div className="flex items-center space-x-3.5 min-w-0">
+            <div className="relative flex items-center justify-center shrink-0">
+              <span className="absolute inline-flex h-4 w-4 rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </div>
+            <div className="min-w-0">
+              <p className="font-extrabold text-xs tracking-tight text-white flex items-center gap-1.5">
+                <span>Order #{activeOrder.id.replace('NP-ORD-', '')}</span>
+                <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono tracking-normal">
+                  {orderStatus === 'PLACED' ? 'Placed' :
+                   (orderStatus === 'PREPARING' || orderStatus === 'ACCEPTED') ? 'Preparing' :
+                   (orderStatus === 'DISPATCHED' || orderStatus === 'OUT-FOR-DELIVERY') ? 'On the way' : 'Delivered'}
+                </span>
+              </p>
+              <p className="text-[10px] text-slate-400 font-bold mt-0.5 flex items-center gap-1">
+                <Clock size={10} className="text-emerald-400" />
+                <span>Arriving in <strong className="text-white">{estimatedMin} mins</strong> • Tap to view live route</span>
+              </p>
+            </div>
+          </div>
+          <div className="bg-emerald-600 p-2.5 rounded-xl text-white flex items-center justify-center shrink-0 hover:bg-emerald-500 transition-colors">
+            <ChevronUp size={14} className="animate-pulse stroke-[3]" />
+          </div>
+        </motion.div>
+      )}
 
       {/* 2. SLIDE-UP LIVE TRACKING DRAWER */}
       <AnimatePresence>
@@ -345,10 +346,10 @@ export const OrderTrackingDrawer: React.FC = () => {
             {/* Backdrop */}
             <motion.div 
               initial={{ opacity: 0 }}
-              animate={{ opacity: 0.4 }}
+              animate={{ opacity: 0.5 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsOpen(false)}
-              className="fixed inset-0 bg-slate-900/60 z-50 backdrop-blur-xs"
+              className="fixed inset-0 bg-slate-950/80 z-50 backdrop-blur-xs"
             />
 
             {/* Slider Sheet */}
@@ -358,14 +359,15 @@ export const OrderTrackingDrawer: React.FC = () => {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-              className="fixed bottom-0 left-0 right-0 bg-slate-50 rounded-t-[2.5rem] shadow-[0_-15px_40px_rgba(0,0,0,0.12)] z-50 overflow-hidden max-w-2xl mx-auto border-t border-slate-100 flex flex-col h-[85vh] sm:h-[80vh]"
+              className="fixed bottom-0 left-0 right-0 bg-slate-50 rounded-t-[2.5rem] shadow-[0_-15px_40px_rgba(0,0,0,0.2)] z-50 overflow-hidden max-w-2xl mx-auto border-t border-slate-200/50 flex flex-col h-[85vh] sm:h-[80vh]"
             >
               {/* Drawer Pull Tab */}
               <div 
-                className="w-full flex justify-center py-3 cursor-pointer bg-white border-b border-slate-100/60"
+                className="w-full flex justify-center py-3.5 cursor-pointer bg-white border-b border-slate-100/60 hover:bg-slate-50/50 transition-colors"
                 onClick={() => setIsOpen(false)}
+                title="Minimize live tracking"
               >
-                <div className="w-12 h-1.5 rounded-full bg-slate-200 hover:bg-slate-300 transition-all" />
+                <div className="w-14 h-1.5 rounded-full bg-slate-200 hover:bg-slate-300 transition-all" />
               </div>
 
               {/* Drawer Content */}
@@ -385,11 +387,14 @@ export const OrderTrackingDrawer: React.FC = () => {
                         {estimatedMin > 0 ? `Arriving in ${estimatedMin} mins` : 'Arrived! Enjoy your food'}
                       </h2>
                     </div>
+                    
+                    {/* Minimize / Close Button */}
                     <button 
                       onClick={() => setIsOpen(false)}
-                      className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all"
+                      className="p-2.5 rounded-full bg-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-all focus:outline-none"
+                      title="Minimize live tracking"
                     >
-                      <ChevronDown className="h-6 w-6" />
+                      <X className="h-5 w-5" />
                     </button>
                   </div>
 
@@ -422,6 +427,31 @@ export const OrderTrackingDrawer: React.FC = () => {
                     <span className="text-[10px] font-bold text-slate-700">Delivery Address</span>
                   </div>
                 </div>
+
+                {/* Cancel Order Card (Only available when Order Status is PLACED) */}
+                {orderStatus === 'PLACED' && (
+                  <div className="bg-red-50/70 border border-red-100/80 p-5 rounded-3xl mt-4 mx-4 shadow-2xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="space-y-1">
+                      <p className="text-xs font-black text-red-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <AlertTriangle size={13} className="text-red-600 animate-pulse" />
+                        Cancel Order Anytime
+                      </p>
+                      <p className="text-slate-500 text-[11px] leading-normal font-bold">
+                        Your order is currently placed. Store hasn't packed or accepted it yet. You can cancel it instantly with one tap.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateOrderStatus(activeOrder.id, 'cancelled');
+                        setIsOpen(false);
+                      }}
+                      className="bg-red-600 hover:bg-red-700 text-white font-black text-xs px-5 py-3 rounded-2xl transition-all shadow-md shadow-red-200 hover:scale-[1.01] active:scale-[0.99] cursor-pointer shrink-0"
+                    >
+                      Cancel Order
+                    </button>
+                  </div>
+                )}
 
                 {/* Progress Timeline steps */}
                 <div className="bg-white p-5 sm:p-8 rounded-3xl mt-4 mx-4 shadow-sm border border-slate-100/80">
