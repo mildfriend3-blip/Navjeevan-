@@ -68,6 +68,7 @@ export interface Order {
   riderPhone?: string;
   customerLat?: number;
   customerLng?: number;
+  completedAt?: string;
 }
 
 export interface CartItem {

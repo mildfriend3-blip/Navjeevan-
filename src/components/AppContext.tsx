@@ -338,6 +338,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem(LOCAL_STORAGE_KEY_ORDERS, JSON.stringify(orders));
   }, [orders]);
 
+  // Listen for storage events to synchronize orders between tabs/iframes instantly
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === LOCAL_STORAGE_KEY_ORDERS && event.newValue) {
+        try {
+          const updatedOrders = JSON.parse(event.newValue);
+          setOrders(updatedOrders);
+        } catch (e) {
+          console.error("Error syncing orders from storage event", e);
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   // Real-time synchronization of current customer's exact profile database (keyed by phone number)
   useEffect(() => {
     if (currentUser && currentUser.phone && currentUser.role === 'customer') {
@@ -480,8 +496,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     riderName?: string,
     riderPhone?: string
   ) => {
-    setOrders((prev) =>
-      prev.map((order) => {
+    setOrders((prev) => {
+      const nextOrders = prev.map((order) => {
         if (order.id === orderId) {
           const updated: Partial<Order> = {
             status,
@@ -495,13 +511,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             updated.estimatedDeliveryTime = 6;
           } else if (status === 'delivered' || status === 'DELIVERED') {
             updated.estimatedDeliveryTime = 0;
+            updated.completedAt = new Date().toISOString();
           }
 
           return { ...order, ...updated } as Order;
         }
         return order;
-      })
-    );
+      });
+
+      // Synchronize directly to local storage to make sure any other open tabs get the update immediately
+      localStorage.setItem(LOCAL_STORAGE_KEY_ORDERS, JSON.stringify(nextOrders));
+
+      // Trigger a StorageEvent for standard browser tabs
+      try {
+        const storageEvent = new StorageEvent('storage', {
+          key: LOCAL_STORAGE_KEY_ORDERS,
+          newValue: JSON.stringify(nextOrders),
+          storageArea: localStorage,
+        });
+        window.dispatchEvent(storageEvent);
+      } catch (e) {
+        console.warn("Storage event dispatch error", e);
+      }
+
+      // Also trigger a custom event
+      window.dispatchEvent(new CustomEvent('navjeevan_order_update', {
+        detail: { orderId, status }
+      }));
+
+      return nextOrders;
+    });
   };
 
   // Update stock level from Manager Dashboard

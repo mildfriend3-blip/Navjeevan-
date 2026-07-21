@@ -98,6 +98,31 @@ export const CustomerApp: React.FC = () => {
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   const [dualDockTab, setDualDockTab] = useState<'delivery' | 'cart'>('delivery');
 
+  const [deliverySuccessBanner, setDeliverySuccessBanner] = useState<{ id: string; idShort: string } | null>(null);
+  const prevOrdersRef = React.useRef<Order[]>([]);
+
+  React.useEffect(() => {
+    orders.forEach((order) => {
+      const prev = prevOrdersRef.current.find(o => o.id === order.id);
+      if (prev && prev.status !== 'DELIVERED' && prev.status !== 'delivered') {
+        if (order.status === 'DELIVERED' || order.status === 'delivered') {
+          // It was just delivered!
+          setDeliverySuccessBanner({
+            id: order.id,
+            idShort: order.id.replace('NP-ORD-', '')
+          });
+          
+          setTimeout(() => {
+            setDeliverySuccessBanner(null);
+            setTrackingOrderId(null);
+            setIsTrackingDrawerOpen(false);
+          }, 5000);
+        }
+      }
+    });
+    prevOrdersRef.current = orders;
+  }, [orders, setTrackingOrderId, setIsTrackingDrawerOpen]);
+
   const handleDragEnd = (event: any, info: any) => {
     if (info.offset.x > 50) {
       setDualDockTab('delivery');
@@ -210,11 +235,11 @@ export const CustomerApp: React.FC = () => {
 
   const activeTrackingOrder = useMemo(() => {
     if (trackingOrderId) {
-      const found = activeOrders.find(o => o.id === trackingOrderId);
+      const found = orders.find(o => o.id === trackingOrderId);
       if (found) return found;
     }
     return activeOrders[0] || null;
-  }, [activeOrders, trackingOrderId]);
+  }, [orders, activeOrders, trackingOrderId]);
 
   const categories: { id: Category | 'all'; label: string; emoji: string; color: string; bg: string }[] = [
     { id: 'all', label: 'All Items', emoji: '🏬', color: 'from-slate-700 to-slate-900', bg: 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100' },
@@ -1069,129 +1094,174 @@ export const CustomerApp: React.FC = () => {
                   </div>
 
                   {/* Status Stepper Tracker */}
-                  <div className="space-y-4 py-2 border-y border-slate-800">
-                    {/* Step 1: Placed */}
-                    <div className="flex items-start gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                          ['placed', 'preparing', 'out-for-delivery', 'delivered'].includes(activeTrackingOrder.status)
-                            ? 'bg-emerald-500 text-slate-950'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}>
-                          {['placed', 'preparing', 'out-for-delivery', 'delivered'].includes(activeTrackingOrder.status) ? <Check size={12} /> : '1'}
-                        </div>
-                        <div className={`w-0.5 h-6 ${
-                          ['preparing', 'out-for-delivery', 'delivered'].includes(activeTrackingOrder.status) ? 'bg-emerald-500' : 'bg-slate-800'
-                        }`} />
-                      </div>
-                      <div>
-                        <p className={`text-xs font-bold ${['placed', 'preparing', 'out-for-delivery', 'delivered'].includes(activeTrackingOrder.status) ? 'text-white' : 'text-slate-500'}`}>
-                          Order Placed
-                        </p>
-                        <p className="text-[10px] text-slate-400">Navjeevan Plus has accepted your request</p>
-                      </div>
-                    </div>
+                  {(() => {
+                    const statusLower = activeTrackingOrder.status.toLowerCase();
+                    const stepIndex = 
+                      statusLower === 'placed' ? 1 :
+                      ['preparing', 'accepted', 'packed'].includes(statusLower) ? 2 :
+                      ['dispatched', 'out-for-delivery', 'out_for_delivery'].includes(statusLower) ? 3 :
+                      statusLower === 'delivered' ? 4 : 1;
 
-                    {/* Step 2: Preparing */}
-                    <div className="flex items-start gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                          ['preparing', 'out-for-delivery', 'delivered'].includes(activeTrackingOrder.status)
-                            ? 'bg-emerald-500 text-slate-950'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}>
-                          {['preparing', 'out-for-delivery', 'delivered'].includes(activeTrackingOrder.status) ? <Check size={12} /> : '2'}
-                        </div>
-                        <div className={`w-0.5 h-6 ${
-                          ['out-for-delivery', 'delivered'].includes(activeTrackingOrder.status) ? 'bg-emerald-500' : 'bg-slate-800'
-                        }`} />
-                      </div>
-                      <div>
-                        <p className={`text-xs font-bold ${['preparing', 'out-for-delivery', 'delivered'].includes(activeTrackingOrder.status) ? 'text-white' : 'text-slate-500'}`}>
-                          Packing & Preparing
-                        </p>
-                        <p className="text-[10px] text-slate-400">Store agents are picking fresh items</p>
-                      </div>
-                    </div>
+                    return (
+                      <>
+                        <div className="space-y-4 py-2 border-y border-slate-800">
+                          {/* Step 1: Placed */}
+                          <div className="flex items-start gap-3">
+                            <div className="flex flex-col items-center">
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                stepIndex >= 1
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}>
+                                {stepIndex > 1 ? <Check size={12} /> : '1'}
+                              </div>
+                              <div className={`w-0.5 h-6 ${
+                                stepIndex >= 2 ? 'bg-emerald-500' : 'bg-slate-800'
+                              }`} />
+                            </div>
+                            <div>
+                              <p className={`text-xs font-bold ${stepIndex >= 1 ? 'text-white' : 'text-slate-500'}`}>
+                                Order Placed
+                              </p>
+                              <p className="text-[10px] text-slate-400">Navjeevan Plus has accepted your request</p>
+                            </div>
+                          </div>
 
-                    {/* Step 3: Out for Delivery */}
-                    <div className="flex items-start gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                          ['out-for-delivery', 'delivered'].includes(activeTrackingOrder.status)
-                            ? 'bg-emerald-500 text-slate-950'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}>
-                          {['out-for-delivery', 'delivered'].includes(activeTrackingOrder.status) ? <Check size={12} /> : '3'}
-                        </div>
-                        <div className={`w-0.5 h-6 ${
-                          ['delivered'].includes(activeTrackingOrder.status) ? 'bg-emerald-500' : 'bg-slate-800'
-                        }`} />
-                      </div>
-                      <div>
-                        <p className={`text-xs font-bold ${['out-for-delivery', 'delivered'].includes(activeTrackingOrder.status) ? 'text-white' : 'text-slate-500'}`}>
-                          Out for Delivery (Dispatched)
-                        </p>
-                        <p className="text-[10px] text-slate-400">Rider is speeding towards your door</p>
-                      </div>
-                    </div>
+                          {/* Step 2: Preparing */}
+                          <div className="flex items-start gap-3">
+                            <div className="flex flex-col items-center">
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                stepIndex >= 2
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}>
+                                {stepIndex > 2 ? <Check size={12} /> : '2'}
+                              </div>
+                              <div className={`w-0.5 h-6 ${
+                                stepIndex >= 3 ? 'bg-emerald-500' : 'bg-slate-800'
+                              }`} />
+                            </div>
+                            <div>
+                              <p className={`text-xs font-bold ${stepIndex >= 2 ? 'text-white' : 'text-slate-500'}`}>
+                                Packing & Preparing
+                              </p>
+                              <p className="text-[10px] text-slate-400">Store agents are picking fresh items</p>
+                            </div>
+                          </div>
 
-                    {/* Step 4: Delivered */}
-                    <div className="flex items-start gap-3">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-800 text-slate-400"
-                        style={{
-                          backgroundColor: activeTrackingOrder.status === 'delivered' ? '#10b981' : undefined,
-                          color: activeTrackingOrder.status === 'delivered' ? '#022c22' : undefined
-                        }}
-                      >
-                        {activeTrackingOrder.status === 'delivered' ? <CheckCircle2 size={13} /> : '4'}
-                      </div>
-                      <div>
-                        <p className={`text-xs font-bold ${activeTrackingOrder.status === 'delivered' ? 'text-emerald-400 font-extrabold' : 'text-slate-500'}`}>
-                          Handed Over (Delivered)
-                        </p>
-                        <p className="text-[10px] text-slate-400">Order delivered! Enjoy your fresh items.</p>
-                      </div>
-                    </div>
-                  </div>
+                          {/* Step 3: Out for Delivery */}
+                          <div className="flex items-start gap-3">
+                            <div className="flex flex-col items-center">
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                stepIndex >= 3
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : 'bg-slate-800 text-slate-400'
+                              }`}>
+                                {stepIndex > 3 ? <Check size={12} /> : '3'}
+                              </div>
+                              <div className={`w-0.5 h-6 ${
+                                stepIndex >= 4 ? 'bg-emerald-500' : 'bg-slate-800'
+                              }`} />
+                            </div>
+                            <div>
+                              <p className={`text-xs font-bold ${stepIndex >= 3 ? 'text-white' : 'text-slate-500'}`}>
+                                Out for Delivery (Dispatched)
+                              </p>
+                              <p className="text-[10px] text-slate-400">Rider is speeding towards your door</p>
+                            </div>
+                          </div>
 
-                  {/* Countdown or Status Info */}
-                  {activeTrackingOrder.status === 'delivered' ? (
-                    <div className="bg-emerald-950 border border-emerald-900 rounded-2xl p-3 text-center">
-                      <p className="text-xs font-bold text-emerald-400">Delivered Successfully! 🎉</p>
-                      <p className="text-[10px] text-emerald-200/80 mt-0.5">Rate your experience with Navjeevan Plus.</p>
-                    </div>
-                  ) : activeTrackingOrder.status === 'cancelled' ? (
-                    <div className="bg-red-950 border border-red-900 rounded-2xl p-3 text-center">
-                      <p className="text-xs font-bold text-red-400">Order Cancelled 🚫</p>
-                    </div>
-                  ) : (
-                    <div className="flex justify-between items-center bg-slate-800 p-3.5 rounded-2xl">
-                      <div className="flex items-center gap-2">
-                        <div className="bg-amber-400 text-slate-900 p-1.5 rounded-lg animate-pulse">
-                          <Clock size={16} />
+                          {/* Step 4: Delivered */}
+                          <div className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all bg-slate-800 text-slate-400"
+                              style={{
+                                backgroundColor: stepIndex >= 4 ? '#10b981' : undefined,
+                                color: stepIndex >= 4 ? '#022c22' : undefined
+                              }}
+                            >
+                              {stepIndex >= 4 ? <CheckCircle2 size={13} /> : '4'}
+                            </div>
+                            <div>
+                              <p className={`text-xs font-bold ${stepIndex >= 4 ? 'text-emerald-400 font-extrabold' : 'text-slate-500'}`}>
+                                Handed Over - Delivered
+                              </p>
+                              <p className="text-[10px] text-slate-400">Order delivered! Enjoy your fresh items.</p>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Estimated In</span>
-                          <span className="text-sm font-black text-white">{activeTrackingOrder.estimatedDeliveryTime} Mins</span>
-                        </div>
-                      </div>
-                      
-                      {activeTrackingOrder.riderName ? (
-                        <div className="text-right">
-                          <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Rider Partner</span>
-                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                            <Phone size={10} /> {activeTrackingOrder.riderName}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="text-right">
-                          <span className="block text-[9px] font-bold text-amber-500 animate-pulse">Rider Assignment</span>
-                          <span className="text-xs text-slate-400">Assigning local pilot...</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+
+                        {/* Countdown or Status Info */}
+                        {statusLower === 'delivered' ? (
+                          <div className="bg-emerald-950 border border-emerald-900 rounded-2xl p-4 text-center space-y-3">
+                            <div className="flex justify-between items-center bg-emerald-900/40 p-3 rounded-2xl">
+                              <div className="flex items-center gap-2">
+                                <div className="bg-emerald-500 text-slate-900 p-1.5 rounded-lg animate-pulse">
+                                  <Clock size={16} />
+                                </div>
+                                <div className="text-left">
+                                  <span className="block text-[9px] font-bold text-emerald-300 uppercase tracking-wider font-sans">Status</span>
+                                  <span className="text-xs font-black text-white">Delivered Just Now</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  alert("Thank you for your rating! ⭐⭐⭐⭐⭐");
+                                  setTrackingOrderId(null);
+                                  setIsTrackingDrawerOpen(false);
+                                }}
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl transition-all shadow-md shadow-emerald-600/10"
+                              >
+                                Rate & Review
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTrackingOrderId(null);
+                                  setIsTrackingDrawerOpen(false);
+                                }}
+                                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-2.5 rounded-xl transition-all border border-slate-700"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          </div>
+                        ) : statusLower === 'cancelled' ? (
+                          <div className="bg-red-950 border border-red-900 rounded-2xl p-3 text-center">
+                            <p className="text-xs font-bold text-red-400">Order Cancelled 🚫</p>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between items-center bg-slate-800 p-3.5 rounded-2xl">
+                            <div className="flex items-center gap-2">
+                              <div className="bg-amber-400 text-slate-900 p-1.5 rounded-lg animate-pulse">
+                                <Clock size={16} />
+                              </div>
+                              <div>
+                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Estimated In</span>
+                                <span className="text-sm font-black text-white">{activeTrackingOrder.estimatedDeliveryTime} Mins</span>
+                              </div>
+                            </div>
+                            
+                            {activeTrackingOrder.riderName ? (
+                              <div className="text-right">
+                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Rider Partner</span>
+                                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                                  <Phone size={10} /> {activeTrackingOrder.riderName}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="text-right">
+                                <span className="block text-[9px] font-bold text-amber-500 animate-pulse">Rider Assignment</span>
+                                <span className="text-xs text-slate-400">Assigning local pilot...</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {/* Order cancellation trigger */}
                   {activeTrackingOrder.status === 'placed' && (
@@ -1752,6 +1822,41 @@ export const CustomerApp: React.FC = () => {
       </AnimatePresence>
 
       <OrderTrackingDrawer />
+
+      {/* 5-Second Green Success Banner */}
+      <AnimatePresence>
+        {deliverySuccessBanner && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 z-50">
+            <motion.div
+              initial={{ y: 80, opacity: 0, scale: 0.9 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 50, opacity: 0, scale: 0.9 }}
+              transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+              className="bg-emerald-600 border border-emerald-500 text-white rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 text-white p-2 rounded-xl flex items-center justify-center animate-bounce">
+                  <CheckCircle2 size={20} className="stroke-[2.5]" />
+                </div>
+                <div className="text-left">
+                  <h4 className="text-sm font-black tracking-tight">Order #{deliverySuccessBanner.idShort} Delivered 🎉</h4>
+                  <p className="text-[10px] text-emerald-100 font-bold mt-0.5 font-sans">Delivered safe, fresh, and contact-free!</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setDeliverySuccessBanner(null);
+                  setTrackingOrderId(null);
+                  setIsTrackingDrawerOpen(false);
+                }}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-black px-3.5 py-2 rounded-xl transition-all shadow-xs shrink-0 border border-emerald-500/20"
+              >
+                Dismiss
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

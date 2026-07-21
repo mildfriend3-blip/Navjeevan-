@@ -118,11 +118,11 @@ export const OrderTrackingDrawer: React.FC = () => {
   // Find the active order for the current town
   const activeOrder = useMemo(() => {
     if (trackingOrderId) {
-      const found = activeOrders.find(o => o.id === trackingOrderId);
+      const found = orders.find(o => o.id === trackingOrderId);
       if (found) return found;
     }
     return activeOrders[0] || null;
-  }, [activeOrders, trackingOrderId]);
+  }, [orders, activeOrders, trackingOrderId]);
 
   // Rider progress state (0 to 100%)
   const [riderProgress, setRiderProgress] = useState(0);
@@ -492,20 +492,21 @@ export const OrderTrackingDrawer: React.FC = () => {
   if (!activeOrder) return null;
 
   // Active status formatters
+  const statusLower = activeOrder.status.toLowerCase();
   const orderStatus = activeOrder.status.toUpperCase();
   const stepIndex = 
-    orderStatus === 'PLACED' ? 1 :
-    orderStatus === 'PREPARING' || orderStatus === 'ACCEPTED' ? 2 :
-    orderStatus === 'DISPATCHED' || orderStatus === 'OUT-FOR-DELIVERY' ? 3 :
-    orderStatus === 'DELIVERED' ? 4 : 1;
+    statusLower === 'placed' ? 1 :
+    ['preparing', 'accepted', 'packed'].includes(statusLower) ? 2 :
+    ['dispatched', 'out-for-delivery', 'out_for_delivery'].includes(statusLower) ? 3 :
+    statusLower === 'delivered' ? 4 : 1;
 
   // Dynamic remaining minutes based on rider progress
-  const estimatedMin = orderStatus === 'DELIVERED' ? 0 : Math.max(1, Math.round(12 * (1 - riderProgress / 100)));
+  const estimatedMin = statusLower === 'delivered' ? 0 : Math.max(1, Math.round(12 * (1 - riderProgress / 100)));
 
   return (
     <>
       {/* 1. STICKY FLOATING TRACKING PILL (WHEN MINIMIZED) */}
-      {!isOpen && cart.length === 0 && (
+      {!isOpen && cart.length === 0 && statusLower !== 'delivered' && statusLower !== 'cancelled' && (
         <motion.div 
           initial={{ y: 50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -583,7 +584,7 @@ export const OrderTrackingDrawer: React.FC = () => {
                         <p className="text-xs text-slate-400 font-mono">{activeOrder.id}</p>
                       </div>
                       <h2 className="text-xl sm:text-2xl font-sans font-extrabold text-slate-900 mt-2 tracking-tight">
-                        {estimatedMin > 0 ? `Arriving in ${estimatedMin} mins` : 'Arrived! Enjoy your food'}
+                        {statusLower === 'delivered' ? 'Delivered Just Now' : estimatedMin > 0 ? `Arriving in ${estimatedMin} mins` : 'Arrived! Enjoy your food'}
                       </h2>
                     </div>
                     
@@ -765,17 +766,17 @@ export const OrderTrackingDrawer: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Step 4: Delivered */}
+                    {/* Step 4: Handed Over - Delivered */}
                     <div className="flex items-start space-x-4 relative">
                       <div className={`z-10 flex items-center justify-center h-9 w-9 rounded-full border-2 transition-all ${
                         stepIndex >= 4 ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-200 text-slate-400'
                       }`}>
-                        <CheckCircle2 className="h-4.5 w-4.5" />
+                        {stepIndex >= 4 ? <Check className="h-4.5 w-4.5 stroke-[3]" /> : <CheckCircle2 className="h-4.5 w-4.5" />}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
-                          <p className={`font-sans font-extrabold text-xs sm:text-sm ${stepIndex >= 4 ? 'text-slate-800' : 'text-slate-400'}`}>Delivered Successfully</p>
-                          {stepIndex === 4 && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-extrabold">Complete</span>}
+                          <p className={`font-sans font-extrabold text-xs sm:text-sm ${stepIndex >= 4 ? 'text-slate-800' : 'text-slate-400'}`}>Handed Over - Delivered</p>
+                          {stepIndex === 4 && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-extrabold font-sans">Delivered Just Now</span>}
                         </div>
                         <p className="text-slate-500 text-[11px] sm:text-xs mt-0.5">Delivered safe, fresh, and contact-free</p>
                       </div>
@@ -806,6 +807,41 @@ export const OrderTrackingDrawer: React.FC = () => {
                         <Phone className="h-5 w-5 text-emerald-600" />
                       </a>
                     )}
+                  </div>
+                )}
+
+                {/* Rate & Review or Dismiss buttons */}
+                {statusLower === 'delivered' && (
+                  <div className="bg-emerald-950 border border-emerald-900 p-5 rounded-3xl mt-4 mx-4 shadow-md text-center space-y-4">
+                    <div>
+                      <p className="text-sm font-black text-emerald-400">Delivered Successfully! 🎉</p>
+                      <p className="text-emerald-200/80 text-[11px] leading-normal font-bold mt-1">
+                        Rate your superfast delivery pilot and help us maintain fresh standards.
+                      </p>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          alert("Thank you for your rating! ⭐⭐⭐⭐⭐");
+                          setTrackingOrderId(null);
+                          setIsOpen(false);
+                        }}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-3.5 rounded-2xl transition-all shadow-lg shadow-emerald-600/20 active:scale-95"
+                      >
+                        Rate & Review Order
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTrackingOrderId(null);
+                          setIsOpen(false);
+                        }}
+                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-3.5 rounded-2xl transition-all border border-slate-700 active:scale-95"
+                      >
+                        Dismiss Tracking
+                      </button>
+                    </div>
                   </div>
                 )}
 
