@@ -8,6 +8,7 @@ import {
 import { FRANCHISE_STORES } from '../data/initialData';
 import { Town } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { ProfileModal } from './ProfileModal';
 
 // Copy of neighborhoods for easy lookup in the fallback selector
 const NEIGHBORHOODS: Record<Town, string[]> = {
@@ -79,6 +80,7 @@ export const Header: React.FC = () => {
   } = useApp();
 
   const [isDetecting, setIsDetecting] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [detectStatus, setDetectStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
@@ -654,8 +656,21 @@ export const Header: React.FC = () => {
               {currentUser && (
                 <>
                   {/* User Profile Pill & Role Badge */}
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 pl-2.5 pr-3.5 py-1.5 rounded-full shadow-2xs">
-                    <div className="h-7 w-7 rounded-full bg-emerald-500 text-white flex items-center justify-center font-black text-xs uppercase shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (currentUser.role === 'customer') {
+                        setIsProfileOpen(true);
+                      }
+                    }}
+                    className={`flex items-center gap-2 bg-slate-50 border border-slate-200 pl-2.5 pr-3.5 py-1.5 rounded-full shadow-2xs text-left transition-all ${
+                      currentUser.role === 'customer' 
+                        ? 'cursor-pointer hover:bg-slate-100 hover:border-slate-300 hover:shadow-xs active:scale-[0.98]' 
+                        : ''
+                    }`}
+                    title={currentUser.role === 'customer' ? 'View Profile & Account Dashboard' : undefined}
+                  >
+                    <div className="h-7 w-7 rounded-full bg-emerald-500 text-white flex items-center justify-center font-black text-xs uppercase shadow-xs shrink-0">
                       {currentUser.name.slice(0, 1) || 'U'}
                     </div>
                     <div className="text-left leading-tight">
@@ -672,7 +687,7 @@ export const Header: React.FC = () => {
                         {currentUser.role === 'manager' ? 'Manager' : currentUser.role === 'rider' ? 'Rider' : 'Customer'}
                       </span>
                     </div>
-                  </div>
+                  </button>
 
                   {/* Switch User / Logout Button */}
                   <button
@@ -966,6 +981,9 @@ export const Header: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Zepto-Style Profile & Account Dashboard Modal */}
+      <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </>
   );
 };

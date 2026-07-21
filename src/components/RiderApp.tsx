@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from './AppContext';
 import { FRANCHISE_STORES } from '../data/initialData';
 import { Town, Order, OrderStatus } from '../types';
@@ -8,6 +8,86 @@ import {
   Compass, AlertTriangle, ChevronRight, CheckCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+const STORE_COORDINATES: Record<Town, { lat: number; lng: number }> = {
+  Jalgaon: { lat: 21.0077, lng: 75.5626 },
+  Shahada: { lat: 21.5034, lng: 74.4739 },
+  Nandurbar: { lat: 21.3687, lng: 74.2384 },
+  Dhule: { lat: 20.9042, lng: 74.7749 }
+};
+
+const fetchOSRMRoute = async (start: { lat: number; lng: number }, end: { lat: number; lng: number }) => {
+  try {
+    const response = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`,
+      {
+        headers: { 'User-Agent': 'Navjeevan-Plus-App' }
+      }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      if (data.routes && data.routes[0]) {
+        const coords = data.routes[0].geometry.coordinates; // [lng, lat]
+        const path = coords.map((c: [number, number]) => ({ lat: c[1], lng: c[0] }));
+        const distanceMeters = data.routes[0].distance || 1500;
+        const durationSeconds = data.routes[0].duration || 240;
+        return { path, distance: (distanceMeters / 1000).toFixed(1), duration: Math.ceil(durationSeconds / 60) };
+      }
+    }
+  } catch (err) {
+    console.warn("OSM routing request failed:", err);
+  }
+  return null;
+};
+
+const createGridFallbackPath = (start: { lat: number; lng: number }, end: { lat: number; lng: number }) => {
+  const midLat = start.lat + (end.lat - start.lat) * 0.4;
+  const midLng = start.lng + (end.lng - start.lng) * 0.6;
+  return [
+    start,
+    { lat: midLat, lng: start.lng },
+    { lat: midLat, lng: midLng },
+    { lat: end.lat, lng: midLng },
+    end
+  ];
+};
+
+function interpolatePath(path: { lat: number; lng: number }[], progress: number): { lat: number; lng: number } {
+  if (!path || path.length === 0) return { lat: 0, lng: 0 };
+  if (path.length === 1) return path[0];
+  if (progress <= 0) return path[0];
+  if (progress >= 100) return path[path.length - 1];
+
+  const getDistance = (p1: { lat: number; lng: number }, p2: { lat: number; lng: number }) => {
+    return Math.sqrt(Math.pow(p1.lat - p2.lat, 2) + Math.pow(p1.lng - p2.lng, 2));
+  };
+
+  let totalDist = 0;
+  const segments: number[] = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const d = getDistance(path[i], path[i + 1]);
+    segments.push(d);
+    totalDist += d;
+  }
+
+  if (totalDist === 0) return path[0];
+
+  const targetDist = totalDist * (progress / 100);
+  let accumulatedDist = 0;
+  for (let i = 0; i < segments.length; i++) {
+    if (accumulatedDist + segments[i] >= targetDist) {
+      const segmentProgress = (targetDist - accumulatedDist) / segments[i];
+      const p1 = path[i];
+      const p2 = path[i + 1];
+      return {
+        lat: p1.lat + (p2.lat - p1.lat) * segmentProgress,
+        lng: p1.lng + (p2.lng - p1.lng) * segmentProgress
+      };
+    }
+    accumulatedDist += segments[i];
+  }
+  return path[path.length - 1];
+}
 
 export const RiderApp: React.FC = () => {
   const {
@@ -55,7 +135,7 @@ export const RiderApp: React.FC = () => {
 
   const [localMapStep, setLocalMapStep] = useState<number>(2);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!selectedJob) {
       setLocalMapStep(2);
     } else if (selectedJob.status === 'DELIVERED' || selectedJob.status === 'delivered') {
@@ -65,20 +145,331 @@ export const RiderApp: React.FC = () => {
     }
   }, [selectedJob]);
 
-  // Map route simulation coordinates and checkpoints
-  const checkpoints = [
-    { label: `${currentTown} Store Hub`, desc: 'Acquire packets from dispatch counter', distance: '1.2 km' },
-    { label: 'Shivaji Marg Bypass', desc: 'Cruising through city center', distance: '0.7 km' },
-    { label: 'Local Security Gate', desc: 'Sector clearance protocol', distance: '0.2 km' },
-    { label: 'Customer Doorstep', desc: 'Arrived at destination address', distance: '0.0 km' }
-  ];
-
   // Derive step for GPS simulator map
   const simulatedMapStep = useMemo(() => {
     if (!selectedJob) return 0;
     if (selectedJob.status === 'DELIVERED' || selectedJob.status === 'delivered') return 3;
     return localMapStep;
   }, [selectedJob, localMapStep]);
+
+  // MAP INTEGRATION STATE & EFFECTS (RIDER PORTAL - DARK MODE NIGHT STYLE)
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const googleMapInstanceRef = useRef<any>(null);
+  const googleRiderMarkerRef = useRef<any>(null);
+  const googlePolylineRef = useRef<any>(null);
+  
+  const leafletMapInstanceRef = useRef<any>(null);
+  const leafletRiderMarkerRef = useRef<any>(null);
+  
+  const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
+  const [isLeafletLoaded, setIsLeafletLoaded] = useState(false);
+
+  const [routeCoordinates, setRouteCoordinates] = useState<{ lat: number; lng: number }[]>([]);
+  const [routeDistance, setRouteDistance] = useState<string>('1.4 km');
+  const [routeDuration, setRouteDuration] = useState<number>(4);
+
+  const storeCoord = useMemo(() => {
+    return selectedJob ? (STORE_COORDINATES[selectedJob.storeId as Town] || STORE_COORDINATES[currentTown] || STORE_COORDINATES.Dhule) : STORE_COORDINATES.Dhule;
+  }, [selectedJob, currentTown]);
+
+  const destLat = selectedJob?.customerLat || (storeCoord.lat - 0.006);
+  const destLng = selectedJob?.customerLng || (storeCoord.lng + 0.006);
+
+  // Dynamic Metrics calculation
+  const remainingFraction = Math.max(0, 1 - (simulatedMapStep / 3));
+  const rawDistNumber = parseFloat(routeDistance) || 1.4;
+  const remainingDist = (rawDistNumber * remainingFraction).toFixed(1);
+  const remainingTime = Math.ceil(routeDuration * remainingFraction);
+
+  const checkpoints = useMemo(() => [
+    { label: `${currentTown} Store Hub`, desc: 'Acquire packets from dispatch counter', distance: `${rawDistNumber.toFixed(1)} km` },
+    { label: 'Shivaji Marg Bypass', desc: 'Cruising through city center', distance: `${(rawDistNumber * 0.6).toFixed(1)} km` },
+    { label: 'Local Security Gate', desc: 'Sector clearance protocol', distance: `${(rawDistNumber * 0.2).toFixed(1)} km` },
+    { label: 'Customer Doorstep', desc: 'Arrived at destination address', distance: '0.0 km' }
+  ], [currentTown, rawDistNumber]);
+
+  // Load Google Maps or Leaflet Fallback
+  useEffect(() => {
+    if (!selectedJob) return;
+
+    const API_KEY =
+      (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY ||
+      process.env.GOOGLE_MAPS_PLATFORM_KEY ||
+      '';
+
+    if (API_KEY && API_KEY !== 'YOUR_API_KEY') {
+      if ((window as any).google && (window as any).google.maps) {
+        setIsGoogleMapsLoaded(true);
+      } else {
+        const scriptId = 'google-maps-rider-script';
+        let script = document.getElementById(scriptId) as HTMLScriptElement;
+        if (!script) {
+          script = document.createElement('script');
+          script.id = scriptId;
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}`;
+          script.async = true;
+          script.defer = true;
+          script.onload = () => setIsGoogleMapsLoaded(true);
+          script.onerror = () => {
+            console.warn("Failed to load Google Maps, falling back to Leaflet.");
+            loadLeafletFallback();
+          };
+          document.head.appendChild(script);
+        } else {
+          const handler = () => setIsGoogleMapsLoaded(true);
+          script.addEventListener('load', handler);
+          return () => script.removeEventListener('load', handler);
+        }
+      }
+    } else {
+      loadLeafletFallback();
+    }
+
+    function loadLeafletFallback() {
+      if ((window as any).L) {
+        setIsLeafletLoaded(true);
+        return;
+      }
+      const linkId = 'leaflet-css';
+      if (!document.getElementById(linkId)) {
+        const link = document.createElement('link');
+        link.id = linkId;
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+      }
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.onload = () => setIsLeafletLoaded(true);
+      document.head.appendChild(script);
+    }
+  }, [selectedJob]);
+
+  // Auto route calculation
+  useEffect(() => {
+    if (!selectedJob) {
+      setRouteCoordinates([]);
+      return;
+    }
+
+    const start = storeCoord;
+    const end = { lat: destLat, lng: destLng };
+    let isMounted = true;
+
+    const loadRoute = async () => {
+      // 1. Try Google
+      if ((window as any).google?.maps?.DirectionsService) {
+        try {
+          const directionsService = new (window as any).google.maps.DirectionsService();
+          const result = await new Promise<any>((resolve, reject) => {
+            directionsService.route(
+              {
+                origin: start,
+                destination: end,
+                travelMode: (window as any).google.maps.TravelMode.DRIVING,
+              },
+              (res: any, status: any) => {
+                if (status === 'OK' && res) resolve(res);
+                else reject(status);
+              }
+            );
+          });
+
+          if (result && result.routes && result.routes[0] && isMounted) {
+            const legs = result.routes[0].legs[0];
+            const coords: { lat: number; lng: number }[] = [];
+            legs.steps.forEach((step: any) => {
+              step.path.forEach((p: any) => {
+                coords.push({ lat: p.lat(), lng: p.lng() });
+              });
+            });
+            setRouteCoordinates(coords);
+            setRouteDistance(legs.distance?.text || `${(legs.distance?.value / 1000).toFixed(1)} km`);
+            setRouteDuration(Math.ceil(legs.duration?.value / 60) || 4);
+            return;
+          }
+        } catch (err) {
+          console.warn("Rider Map Google directions failed, trying OSRM:", err);
+        }
+      }
+
+      // 2. Try OSRM
+      try {
+        const osmRoute = await fetchOSRMRoute(start, end);
+        if (osmRoute && osmRoute.path && osmRoute.path.length > 0 && isMounted) {
+          setRouteCoordinates(osmRoute.path);
+          setRouteDistance(`${osmRoute.distance} km`);
+          setRouteDuration(osmRoute.duration);
+          return;
+        }
+      } catch (err) {
+        console.warn("Rider Map OSM routing failed:", err);
+      }
+
+      // 3. Fallback to city grid path
+      if (isMounted) {
+        const fallback = createGridFallbackPath(start, end);
+        setRouteCoordinates(fallback);
+        setRouteDistance("1.4 km");
+        setRouteDuration(4);
+      }
+    };
+
+    loadRoute();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedJob?.id, storeCoord.lat, storeCoord.lng, destLat, destLng]);
+
+  // Derived progress-based coordinate interpolation
+  const riderProgress = simulatedMapStep * 33.33;
+  const interpolatedRiderPos = useMemo(() => {
+    return routeCoordinates.length > 0
+      ? interpolatePath(routeCoordinates, riderProgress)
+      : {
+          lat: storeCoord.lat + (destLat - storeCoord.lat) * (riderProgress / 100),
+          lng: storeCoord.lng + (destLng - storeCoord.lng) * (riderProgress / 100)
+        };
+  }, [routeCoordinates, riderProgress, storeCoord, destLat, destLng]);
+
+  // Render Google Maps (Rider View - Dark Mode)
+  useEffect(() => {
+    if (!isGoogleMapsLoaded || !mapContainerRef.current || !selectedJob) return;
+
+    const google = (window as any).google;
+
+    if (!googleMapInstanceRef.current) {
+      const mapOptions = {
+        center: storeCoord,
+        zoom: 14,
+        disableDefaultUI: true,
+        styles: [
+          { "elementType": "geometry", "stylers": [{ "color": "#1f2937" }] },
+          { "elementType": "labels.text.stroke", "stylers": [{ "color": "#1f2937" }] },
+          { "elementType": "labels.text.fill", "stylers": [{ "color": "#9ca5b3" }] },
+          { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#10b981" }] },
+          { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#10b981" }] },
+          { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#111827" }] },
+          { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#374151" }] },
+          { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#9ca5b3" }] },
+          { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#312e81" }] },
+          { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#030712" }] }
+        ]
+      };
+      googleMapInstanceRef.current = new google.maps.Map(mapContainerRef.current, mapOptions);
+    }
+
+    const map = googleMapInstanceRef.current;
+
+    // Set path or update polyline
+    if (routeCoordinates && routeCoordinates.length > 0) {
+      if (!googlePolylineRef.current) {
+        googlePolylineRef.current = new google.maps.Polyline({
+          path: routeCoordinates,
+          geodesic: true,
+          strokeColor: '#10b981', // Glowing green route line
+          strokeOpacity: 0.9,
+          strokeWeight: 5,
+          map,
+        });
+      } else {
+        googlePolylineRef.current.setPath(routeCoordinates);
+      }
+
+      // Auto-fit bounds
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend(storeCoord);
+      bounds.extend({ lat: destLat, lng: destLng });
+      routeCoordinates.forEach(pt => bounds.extend(pt));
+      map.fitBounds(bounds, { top: 35, bottom: 35, left: 35, right: 35 });
+    }
+  }, [isGoogleMapsLoaded, selectedJob?.id, storeCoord, destLat, destLng, routeCoordinates]);
+
+  // Update Rider Marker on Google Maps
+  useEffect(() => {
+    if (!isGoogleMapsLoaded || !googleMapInstanceRef.current || !selectedJob) return;
+
+    const google = (window as any).google;
+
+    if (!googleRiderMarkerRef.current) {
+      googleRiderMarkerRef.current = new google.maps.Marker({
+        position: interpolatedRiderPos,
+        map: googleMapInstanceRef.current,
+        title: "Your Location",
+        icon: {
+          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="48" height="48">
+              <circle cx="32" cy="32" r="30" fill="%2310b981" stroke="white" stroke-width="3" />
+              <g transform="translate(14, 16)">
+                <path d="M4 22h24l3-8H20" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="6" cy="22" r="4" fill="white"/>
+                <circle cx="26" cy="22" r="4" fill="white"/>
+                <rect x="2" y="10" width="8" height="8" rx="1" fill="white"/>
+                <circle cx="17" cy="6" r="3" fill="white"/>
+              </g>
+            </svg>
+          `),
+          scaledSize: new google.maps.Size(36, 36),
+          anchor: new google.maps.Point(18, 18)
+        }
+      });
+    } else {
+      googleRiderMarkerRef.current.setPosition(interpolatedRiderPos);
+    }
+  }, [isGoogleMapsLoaded, interpolatedRiderPos, selectedJob?.id]);
+
+  // Render Leaflet Map (Rider View - Dark Mode)
+  useEffect(() => {
+    if (!isLeafletLoaded || !mapContainerRef.current || !selectedJob || isGoogleMapsLoaded) return;
+
+    const L = (window as any).L;
+
+    if (!leafletMapInstanceRef.current) {
+      leafletMapInstanceRef.current = L.map(mapContainerRef.current, {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([storeCoord.lat, storeCoord.lng], 14);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+      }).addTo(leafletMapInstanceRef.current);
+    }
+
+    const map = leafletMapInstanceRef.current;
+
+    // Clear existing
+    map.eachLayer((layer: any) => {
+      if (layer instanceof L.Marker || layer instanceof L.Polyline) {
+        map.removeLayer(layer);
+      }
+    });
+
+    // Add glowing green polyline
+    if (routeCoordinates && routeCoordinates.length > 0) {
+      const leafletPath = routeCoordinates.map(pt => [pt.lat, pt.lng]);
+      L.polyline(leafletPath, {
+        color: '#10b981',
+        weight: 5,
+        opacity: 0.95,
+      }).addTo(map);
+
+      const bounds = L.latLngBounds(leafletPath);
+      bounds.extend([storeCoord.lat, storeCoord.lng]);
+      bounds.extend([destLat, destLng]);
+      map.fitBounds(bounds, { padding: [30, 30] });
+    }
+
+    // Add Rider Marker
+    const riderIcon = L.divIcon({
+      html: `<div class="bg-emerald-500 text-slate-950 p-2 rounded-full border-2 border-white shadow-xl flex items-center justify-center h-10 w-10"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="w-5 h-5"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg></div>`,
+      className: '',
+      iconSize: [40, 40],
+      iconAnchor: [20, 20]
+    });
+    leafletRiderMarkerRef.current = L.marker([interpolatedRiderPos.lat, interpolatedRiderPos.lng], { icon: riderIcon }).addTo(map);
+
+  }, [isLeafletLoaded, isGoogleMapsLoaded, selectedJob?.id, storeCoord, destLat, destLng, routeCoordinates, interpolatedRiderPos]);
 
   return (
     <div className="py-6 space-y-6 max-w-4xl mx-auto px-2">
@@ -204,124 +595,40 @@ export const RiderApp: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* HIGH-CONTRAST SIMULATED GPS ROUTE / MAP DIRECTIONS FRAME */}
+                  {/* HIGH-CONTRAST REAL INTERACTIVE GPS NAVIGATOR */}
                   <div className="bg-slate-900 border border-slate-800 rounded-2.5xl overflow-hidden">
                     
-                    <div className="bg-slate-950/90 px-3.5 py-2 flex items-center justify-between border-b border-slate-800/60">
-                      <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase font-mono flex items-center gap-1">
-                        <Compass size={10} className="animate-spin text-emerald-400" /> Live GPS Navigator
+                    <div className="bg-slate-950/90 px-3.5 py-2.5 flex items-center justify-between border-b border-slate-800/60">
+                      <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase font-mono flex items-center gap-1.5">
+                        <Compass size={11} className="animate-spin text-emerald-400" /> Live GPS Navigator
                       </span>
                       <span className="text-[10px] font-black text-emerald-400 font-mono">
-                        {checkpoints[simulatedMapStep]?.distance} Left
+                        {simulatedMapStep === 3 ? 'Arrived!' : `${remainingDist} km away • ${remainingTime} mins`}
                       </span>
                     </div>
 
-                    {/* Map Visuals Container */}
-                    <div className="h-44 bg-slate-950 relative overflow-hidden flex items-center justify-center p-4">
+                    {/* Interactive Dark-Mode Map Container */}
+                    <div className="h-48 bg-slate-950 relative overflow-hidden flex items-center justify-center">
+                      <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
                       
-                      {/* Grid overlay lines (streets blueprint) */}
-                      <div className="absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.03)_1px,transparent_1px)] bg-[size:16px_16px]" />
-                      
-                      {/* Stylized Roadmap/Streets (visual CSS block paths) */}
-                      <div className="absolute inset-0 z-0">
-                        {/* Street 1 */}
-                        <div className="absolute top-1/4 left-0 w-full h-8 bg-slate-900/40 border-y border-slate-800/30 rotate-1 flex items-center px-4">
-                          <span className="text-[7px] text-slate-600 font-mono uppercase tracking-widest">Shivaji Marg</span>
-                        </div>
-                        {/* Street 2 */}
-                        <div className="absolute top-2/3 left-0 w-full h-8 bg-slate-900/40 border-y border-slate-800/30 -rotate-2 flex items-center justify-end px-4">
-                          <span className="text-[7px] text-slate-600 font-mono uppercase tracking-widest">Main Ring Road</span>
-                        </div>
-                        {/* Crossroads */}
-                        <div className="absolute left-1/3 top-0 w-8 h-full bg-slate-900/50 border-x border-slate-800/30" />
+                      {/* Map Badges overlays */}
+                      <div className="absolute top-3 left-3 bg-slate-900/95 border border-slate-800/90 px-2.5 py-1.5 rounded-xl shadow-md flex items-center space-x-1.5 z-[1000] pointer-events-none">
+                        <ShoppingBag className="h-3 w-3 text-emerald-400" />
+                        <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider font-mono">HUB</span>
                       </div>
 
-                      {/* Moving route path line */}
-                      <svg className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-                        <path 
-                          d="M 50,110 L 130,110 L 250,55 L 340,55" 
-                          fill="none" 
-                          stroke="#1e293b" 
-                          strokeWidth="4" 
-                          strokeLinecap="round" 
-                        />
-                        <path 
-                          d="M 50,110 L 130,110 L 250,55 L 340,55" 
-                          fill="none" 
-                          stroke="#10b981" 
-                          strokeWidth="4" 
-                          strokeLinecap="round" 
-                          strokeDasharray="300"
-                          strokeDashoffset={300 - (simulatedMapStep * 100)}
-                          className="transition-all duration-700 ease-out"
-                        />
-                      </svg>
-
-                      {/* Map Nodes Markers */}
-                      
-                      {/* Franchise Hub Node */}
-                      <div className="absolute left-12 bottom-8 flex flex-col items-center z-10">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 shadow-md transition-all ${
-                          simulatedMapStep >= 0 ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-900 border-slate-700 text-slate-500'
-                        }`}>
-                          <ShoppingBag size={10} />
-                        </div>
-                        <span className="text-[7px] font-bold text-slate-500 uppercase font-mono mt-1 bg-slate-950 px-1 rounded">Hub</span>
+                      <div className="absolute bottom-3 right-3 bg-slate-900/95 border border-slate-800/90 px-2.5 py-1.5 rounded-xl shadow-md flex items-center space-x-1.5 z-[1000] pointer-events-none">
+                        <MapPin className="h-3 w-3 text-red-400" />
+                        <span className="text-[8px] font-black text-slate-300 uppercase tracking-wider font-mono">CUSTOMER</span>
                       </div>
-
-                      {/* Transit/Bypass Node */}
-                      <div className="absolute left-32 bottom-8 flex flex-col items-center z-10">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 shadow-md transition-all ${
-                          simulatedMapStep >= 1 ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-slate-900 border-slate-700 text-slate-500'
-                        }`}>
-                          <Compass size={10} className="rotate-45" />
-                        </div>
-                        <span className="text-[7px] font-bold text-slate-500 uppercase font-mono mt-1 bg-slate-950 px-1 rounded">Transit</span>
-                      </div>
-
-                      {/* Community Gate Node */}
-                      <div className="absolute right-32 top-8 flex flex-col items-center z-10">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 shadow-md transition-all ${
-                          simulatedMapStep >= 2 ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-slate-900 border-slate-700 text-slate-500'
-                        }`}>
-                          <ShieldCheck size={10} />
-                        </div>
-                        <span className="text-[7px] font-bold text-slate-500 uppercase font-mono mt-1 bg-slate-950 px-1 rounded">Gate</span>
-                      </div>
-
-                      {/* Customer Node */}
-                      <div className="absolute right-12 top-8 flex flex-col items-center z-10">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 shadow-md transition-all ${
-                          simulatedMapStep >= 3 ? 'bg-red-600 border-red-400 text-white animate-bounce' : 'bg-slate-900 border-slate-700 text-slate-500'
-                        }`}>
-                          <MapPin size={12} className="fill-white" />
-                        </div>
-                        <span className="text-[7px] font-black text-red-400 uppercase font-mono mt-1 bg-slate-950 px-1 rounded">Cust</span>
-                      </div>
-
-                      {/* Animated Scooter Rider Marker */}
-                      <motion.div 
-                        className="absolute z-20 pointer-events-none"
-                        animate={
-                          simulatedMapStep === 0 ? { x: -110, y: 22 } :
-                          simulatedMapStep === 1 ? { x: -35, y: 22 } :
-                          simulatedMapStep === 2 ? { x: 55, y: -30 } :
-                          { x: 135, y: -30 }
-                        }
-                        transition={{ type: "spring", stiffness: 60, damping: 15 }}
-                      >
-                        <div className="bg-emerald-500 text-slate-950 p-1.5 rounded-full shadow-lg border border-white flex items-center justify-center">
-                          <Truck size={12} className="stroke-[3]" />
-                        </div>
-                      </motion.div>
                     </div>
 
                     {/* Active Navigation Instructions */}
-                    <div className="bg-slate-900 px-4 py-3 border-t border-slate-800/60 flex items-center justify-between">
-                      <div className="text-left leading-tight">
+                    <div className="bg-slate-900 px-4 py-3.5 border-t border-slate-800/60 flex items-center justify-between gap-3">
+                      <div className="text-left leading-tight min-w-0 flex-1">
                         <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest block font-mono">NAVIGATING TO</span>
-                        <span className="text-xs font-bold text-white block mt-0.5">{checkpoints[simulatedMapStep]?.label}</span>
-                        <p className="text-[10px] text-slate-400 font-medium">{checkpoints[simulatedMapStep]?.desc}</p>
+                        <span className="text-xs font-bold text-white block mt-0.5 truncate">{checkpoints[simulatedMapStep]?.label}</span>
+                        <p className="text-[10px] text-slate-400 font-medium truncate">{checkpoints[simulatedMapStep]?.desc}</p>
                       </div>
 
                       {/* Step Simulation driver button */}
@@ -332,7 +639,7 @@ export const RiderApp: React.FC = () => {
                             setLocalMapStep(prev => Math.min(3, prev + 1));
                             showToast("Moving to next checkpoint on map...");
                           }}
-                          className="bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold text-[10px] px-3 py-1.5 rounded-lg border border-slate-700 transition-colors cursor-pointer"
+                          className="bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold text-[10px] px-3.5 py-2 rounded-xl border border-slate-700 transition-all cursor-pointer shrink-0"
                         >
                           Next Step ⚡
                         </button>

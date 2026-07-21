@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from './AppContext';
 import { Town, Order } from '../types';
 import { 
@@ -13,6 +13,79 @@ const STORE_COORDINATES: Record<Town, { lat: number; lng: number }> = {
   Nandurbar: { lat: 21.3687, lng: 74.2384 },
   Dhule: { lat: 20.9042, lng: 74.7749 }
 };
+
+const fetchOSRMRoute = async (start: { lat: number; lng: number }, end: { lat: number; lng: number }) => {
+  try {
+    const response = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`,
+      {
+        headers: { 'User-Agent': 'Navjeevan-Plus-App-Customer' }
+      }
+    );
+    if (response.ok) {
+      const data = await response.json();
+      if (data.routes && data.routes[0]) {
+        const coords = data.routes[0].geometry.coordinates; // [lng, lat]
+        const path = coords.map((c: [number, number]) => ({ lat: c[1], lng: c[0] }));
+        const distanceMeters = data.routes[0].distance || 1500;
+        const durationSeconds = data.routes[0].duration || 240;
+        return { path, distance: (distanceMeters / 1000).toFixed(1), duration: Math.ceil(durationSeconds / 60) };
+      }
+    }
+  } catch (err) {
+    console.warn("OSM routing request failed:", err);
+  }
+  return null;
+};
+
+const createGridFallbackPath = (start: { lat: number; lng: number }, end: { lat: number; lng: number }) => {
+  const midLat = start.lat + (end.lat - start.lat) * 0.4;
+  const midLng = start.lng + (end.lng - start.lng) * 0.6;
+  return [
+    start,
+    { lat: midLat, lng: start.lng },
+    { lat: midLat, lng: midLng },
+    { lat: end.lat, lng: midLng },
+    end
+  ];
+};
+
+function interpolatePath(path: { lat: number; lng: number }[], progress: number): { lat: number; lng: number } {
+  if (!path || path.length === 0) return { lat: 0, lng: 0 };
+  if (path.length === 1) return path[0];
+  if (progress <= 0) return path[0];
+  if (progress >= 100) return path[path.length - 1];
+
+  const getDistance = (p1: { lat: number; lng: number }, p2: { lat: number; lng: number }) => {
+    return Math.sqrt(Math.pow(p1.lat - p2.lat, 2) + Math.pow(p1.lng - p2.lng, 2));
+  };
+
+  let totalDist = 0;
+  const segments: number[] = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const d = getDistance(path[i], path[i + 1]);
+    segments.push(d);
+    totalDist += d;
+  }
+
+  if (totalDist === 0) return path[0];
+
+  const targetDist = totalDist * (progress / 100);
+  let accumulatedDist = 0;
+  for (let i = 0; i < segments.length; i++) {
+    if (accumulatedDist + segments[i] >= targetDist) {
+      const segmentProgress = (targetDist - accumulatedDist) / segments[i];
+      const p1 = path[i];
+      const p2 = path[i + 1];
+      return {
+        lat: p1.lat + (p2.lat - p1.lat) * segmentProgress,
+        lng: p1.lng + (p2.lng - p1.lng) * segmentProgress
+      };
+    }
+    accumulatedDist += segments[i];
+  }
+  return path[path.length - 1];
+}
 
 export const OrderTrackingDrawer: React.FC = () => {
   const { orders, currentTown, updateOrderStatus, userLatLng } = useApp();
@@ -125,8 +198,100 @@ export const OrderTrackingDrawer: React.FC = () => {
   const destLat = activeOrder?.customerLat || userLatLng?.lat || (storeCoord.lat - 0.006);
   const destLng = activeOrder?.customerLng || userLatLng?.lng || (storeCoord.lng + 0.006);
 
-  const riderLat = storeCoord.lat + (destLat - storeCoord.lat) * (riderProgress / 100);
-  const riderLng = storeCoord.lng + (destLng - storeCoord.lng) * (riderProgress / 100);
+  const [routeCoordinates, setRouteCoordinates] = useState<{ lat: number; lng: number }[]>([]);
+  const [routeDistance, setRouteDistance] = useState<string>('1.4 km');
+  const [routeDuration, setRouteDuration] = useState<number>(4);
+
+  // Auto route calculation for Customer View
+  useEffect(() => {
+    if (!activeOrder) {
+      setRouteCoordinates([]);
+      return;
+    }
+
+    const start = storeCoord;
+    const end = { lat: destLat, lng: destLng };
+    let isMounted = true;
+
+    const loadRoute = async () => {
+      // 1. Try Google Directions
+      if ((window as any).google?.maps?.DirectionsService) {
+        try {
+          const directionsService = new (window as any).google.maps.DirectionsService();
+          const result = await new Promise<any>((resolve, reject) => {
+            directionsService.route(
+              {
+                origin: start,
+                destination: end,
+                travelMode: (window as any).google.maps.TravelMode.DRIVING,
+              },
+              (res: any, status: any) => {
+                if (status === 'OK' && res) resolve(res);
+                else reject(status);
+              }
+            );
+          });
+
+          if (result && result.routes && result.routes[0] && isMounted) {
+            const legs = result.routes[0].legs[0];
+            const coords: { lat: number; lng: number }[] = [];
+            legs.steps.forEach((step: any) => {
+              step.path.forEach((p: any) => {
+                coords.push({ lat: p.lat(), lng: p.lng() });
+              });
+            });
+            setRouteCoordinates(coords);
+            setRouteDistance(legs.distance?.text || `${(legs.distance?.value / 1000).toFixed(1)} km`);
+            setRouteDuration(Math.ceil(legs.duration?.value / 60) || 4);
+            return;
+          }
+        } catch (err) {
+          console.warn("Customer Map Google directions failed, trying OSRM:", err);
+        }
+      }
+
+      // 2. Try OSRM
+      try {
+        const osmRoute = await fetchOSRMRoute(start, end);
+        if (osmRoute && osmRoute.path && osmRoute.path.length > 0 && isMounted) {
+          setRouteCoordinates(osmRoute.path);
+          setRouteDistance(`${osmRoute.distance} km`);
+          setRouteDuration(osmRoute.duration);
+          return;
+        }
+      } catch (err) {
+        console.warn("Customer Map OSM routing failed:", err);
+      }
+
+      // 3. Fallback to city grid path
+      if (isMounted) {
+        const fallback = createGridFallbackPath(start, end);
+        setRouteCoordinates(fallback);
+        setRouteDistance("1.4 km");
+        setRouteDuration(4);
+      }
+    };
+
+    loadRoute();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeOrder?.id, storeCoord.lat, storeCoord.lng, destLat, destLng]);
+
+  const riderLat = useMemo(() => {
+    if (routeCoordinates.length > 0) {
+      return interpolatePath(routeCoordinates, riderProgress).lat;
+    }
+    return storeCoord.lat + (destLat - storeCoord.lat) * (riderProgress / 100);
+  }, [routeCoordinates, riderProgress, storeCoord.lat, destLat]);
+
+  const riderLng = useMemo(() => {
+    if (routeCoordinates.length > 0) {
+      return interpolatePath(routeCoordinates, riderProgress).lng;
+    }
+    return storeCoord.lng + (destLng - storeCoord.lng) * (riderProgress / 100);
+  }, [routeCoordinates, riderProgress, storeCoord.lng, destLng]);
 
   // Render Google Maps
   useEffect(() => {
@@ -138,21 +303,22 @@ export const OrderTrackingDrawer: React.FC = () => {
           zoom: 14,
           disableDefaultUI: true,
           styles: [
-            {
-              featureType: 'all',
-              elementType: 'geometry.fill',
-              stylers: [{ weight: 2.0 }],
-            },
-            {
-              featureType: 'water',
-              elementType: 'geometry',
-              stylers: [{ color: '#e9e9e9' }, { lightness: 17 }],
-            },
-            {
-              featureType: 'landscape',
-              elementType: 'geometry',
-              stylers: [{ color: '#f5f5f5' }, { lightness: 20 }],
-            },
+            { "elementType": "geometry", "stylers": [{ "color": "#f5f5f5" }] },
+            { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] },
+            { "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
+            { "elementType": "labels.text.stroke", "stylers": [{ "color": "#f5f5f5" }] },
+            { "featureType": "administrative.land_parcel", "elementType": "labels.text.fill", "stylers": [{ "color": "#bdbdbd" }] },
+            { "featureType": "poi", "elementType": "geometry", "stylers": [{ "color": "#eeeeee" }] },
+            { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
+            { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#ffffff" }] },
+            { "featureType": "road.arterial", "elementType": "labels.text.fill", "stylers": [{ "color": "#757575" }] },
+            { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#dadada" }] },
+            { "featureType": "road.highway", "elementType": "labels.text.fill", "stylers": [{ "color": "#616161" }] },
+            { "featureType": "road.local", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] },
+            { "featureType": "transit.line", "elementType": "geometry", "stylers": [{ "color": "#e5e5e5" }] },
+            { "featureType": "transit.station", "elementType": "geometry", "stylers": [{ "color": "#eeeeee" }] },
+            { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#b1d0e0" }] },
+            { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#9e9e9e" }] }
           ]
         };
 
@@ -190,41 +356,53 @@ export const OrderTrackingDrawer: React.FC = () => {
           }
         });
 
-        // Rider Marker
+        // Rider Marker (Custom high-res scooter icon)
         const riderMarker = new google.maps.Marker({
           position: { lat: riderLat, lng: riderLng },
           map,
           title: "Delivery Rider",
           icon: {
             url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23ea580c" width="40" height="40">
-                <circle cx="12" cy="12" r="11" fill="white" stroke="%23ea580c" stroke-width="2"/>
-                <circle cx="12" cy="8" r="3" fill="%23ea580c"/>
-                <path d="M5 18c0-3.3 2.7-6 6-6h2c3.3 0 6 2.7 6 6v1H5z" fill="%23ea580c"/>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="48" height="48">
+                <circle cx="32" cy="32" r="30" fill="%23ea580c" stroke="white" stroke-width="3" />
+                <g transform="translate(14, 16)">
+                  <path d="M4 22h24l3-8H20" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                  <circle cx="6" cy="22" r="4" fill="white"/>
+                  <circle cx="26" cy="22" r="4" fill="white"/>
+                  <rect x="2" y="10" width="8" height="8" rx="1" fill="white"/>
+                  <circle cx="17" cy="6" r="3" fill="white"/>
+                </g>
               </svg>
             `),
             scaledSize: new google.maps.Size(36, 36),
+            anchor: new google.maps.Point(18, 18)
           }
         });
 
-        // Path Line
+        // Path Line (follow computed road coordinates)
         new google.maps.Polyline({
-          path: [storeCoord, { lat: destLat, lng: destLng }],
+          path: routeCoordinates.length > 0 ? routeCoordinates : [storeCoord, { lat: destLat, lng: destLng }],
           geodesic: true,
           strokeColor: '#10b981',
-          strokeOpacity: 0.8,
-          strokeWeight: 4,
+          strokeOpacity: 0.9,
+          strokeWeight: 5,
           map,
         });
 
-        // Update rider position smoothly
-        riderMarker.setPosition({ lat: riderLat, lng: riderLng });
+        // Auto-fit camera bounds so both store and customer pins are perfectly centered with padding
+        const bounds = new google.maps.LatLngBounds();
+        bounds.extend(storeCoord);
+        bounds.extend({ lat: destLat, lng: destLng });
+        if (routeCoordinates && routeCoordinates.length > 0) {
+          routeCoordinates.forEach(pt => bounds.extend(pt));
+        }
+        map.fitBounds(bounds, { top: 40, bottom: 40, left: 40, right: 40 });
 
       } catch (err) {
         console.error("Error drawing Google Map:", err);
       }
     }
-  }, [isGoogleMapsLoaded, storeCoord, destLat, destLng, riderLat, riderLng, isOpen, activeOrder]);
+  }, [isGoogleMapsLoaded, storeCoord, destLat, destLng, riderLat, riderLng, isOpen, activeOrder, routeCoordinates]);
 
   // Render Leaflet Map
   useEffect(() => {
@@ -237,7 +415,7 @@ export const OrderTrackingDrawer: React.FC = () => {
             attributionControl: false
           }).setView([(storeCoord.lat + destLat) / 2, (storeCoord.lng + destLng) / 2], 14);
 
-          L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             maxZoom: 19,
           }).addTo(map);
 
@@ -259,23 +437,29 @@ export const OrderTrackingDrawer: React.FC = () => {
           });
           L.marker([destLat, destLng], { icon: homeIcon }).addTo(map);
 
-          // Delivery Path
-          L.polyline([[storeCoord.lat, storeCoord.lng], [destLat, destLng]], {
+          // Delivery Path (following road coordinates)
+          const leafletPath = routeCoordinates.length > 0 ? routeCoordinates.map(pt => [pt.lat, pt.lng]) : [[storeCoord.lat, storeCoord.lng], [destLat, destLng]];
+          L.polyline(leafletPath, {
             color: '#10b981',
-            weight: 3.5,
-            opacity: 0.8,
-            dashArray: '6, 6'
+            weight: 5,
+            opacity: 0.9,
           }).addTo(map);
 
-          // Rider Icon
+          // Rider Icon (Custom high-res scooter)
           const riderIcon = L.divIcon({
-            html: `<div class="bg-orange-500 text-white p-2.5 rounded-full border-2 border-white shadow-xl flex items-center justify-center h-9 w-9 animate-bounce"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="w-4 h-4"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg></div>`,
+            html: `<div class="bg-orange-500 text-white p-2 rounded-full border-2 border-white shadow-xl flex items-center justify-center h-10 w-10"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="w-5 h-5"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg></div>`,
             className: '',
-            iconSize: [36, 36],
-            iconAnchor: [18, 18]
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
           });
           const riderMarker = L.marker([riderLat, riderLng], { icon: riderIcon }).addTo(map);
           leafletRiderMarkerRef.current = riderMarker;
+
+          // Auto-fit bounds
+          const bounds = L.latLngBounds(leafletPath);
+          bounds.extend([storeCoord.lat, storeCoord.lng]);
+          bounds.extend([destLat, destLng]);
+          map.fitBounds(bounds, { padding: [30, 30] });
 
           leafletInstanceRef.current = map;
         } else {
@@ -288,7 +472,7 @@ export const OrderTrackingDrawer: React.FC = () => {
         console.error("Error drawing Leaflet Map:", err);
       }
     }
-  }, [isLeafletLoaded, storeCoord, destLat, destLng, riderLat, riderLng, isOpen, activeOrder]);
+  }, [isLeafletLoaded, storeCoord, destLat, destLng, riderLat, riderLng, isOpen, activeOrder, routeCoordinates]);
 
   if (!activeOrder) return null;
 
