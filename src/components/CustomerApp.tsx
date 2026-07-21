@@ -1294,7 +1294,7 @@ export const CustomerApp: React.FC = () => {
                     <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 font-sans">Packed Items</span>
                     <div className="space-y-3">
                       {cart.map((item) => {
-                        const localStock = inventories[currentTown]?.stockLevels[item.product.id] || 0;
+                        const localStock = inventories[currentTown]?.[item.product.id]?.stock || 0;
                         return (
                           <div key={item.product.id} className="flex justify-between items-center gap-4 bg-slate-50/50 p-3 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
                             <div className="flex items-center gap-3 min-w-0">
