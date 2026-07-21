@@ -119,10 +119,34 @@ export const OrderTrackingDrawer: React.FC = () => {
   const activeOrder = useMemo(() => {
     if (trackingOrderId) {
       const found = orders.find(o => o.id === trackingOrderId);
-      if (found) return found;
+      if (found) {
+        const s = found.status.toUpperCase();
+        // NEVER render an order in the active live tracking drawer if status === 'DELIVERED' or status === 'CANCELLED'
+        if (s !== 'DELIVERED' && s !== 'CANCELLED' && (
+          s === 'PLACED' ||
+          s === 'PACKED' ||
+          s === 'PREPARING' ||
+          s === 'ACCEPTED' ||
+          s === 'DISPATCHED' ||
+          s === 'OUT_FOR_DELIVERY' ||
+          s === 'OUT-FOR-DELIVERY'
+        )) {
+          return found;
+        }
+      }
     }
     return activeOrders[0] || null;
   }, [orders, activeOrders, trackingOrderId]);
+
+  // Empty Active State Guard:
+  // If a customer opens the tracking drawer and there are zero active orders (or all orders are delivered/cancelled),
+  // automatically close the modal and display the normal product storefront instead of showing fake default timers.
+  useEffect(() => {
+    if (isOpen && (!activeOrder || activeOrders.length === 0)) {
+      setIsOpen(false);
+      setTrackingOrderId(null);
+    }
+  }, [isOpen, activeOrder, activeOrders, setIsOpen, setTrackingOrderId]);
 
   // Rider progress state (0 to 100%)
   const [riderProgress, setRiderProgress] = useState(0);

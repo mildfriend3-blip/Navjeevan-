@@ -99,6 +99,7 @@ export const CustomerApp: React.FC = () => {
   const [dualDockTab, setDualDockTab] = useState<'delivery' | 'cart'>('delivery');
 
   const [deliverySuccessBanner, setDeliverySuccessBanner] = useState<{ id: string; idShort: string } | null>(null);
+  const [topToastMessage, setTopToastMessage] = useState<string | null>(null);
   const prevOrdersRef = React.useRef<Order[]>([]);
 
   React.useEffect(() => {
@@ -107,6 +108,15 @@ export const CustomerApp: React.FC = () => {
       if (prev && prev.status !== 'DELIVERED' && prev.status !== 'delivered') {
         if (order.status === 'DELIVERED' || order.status === 'delivered') {
           // It was just delivered!
+          
+          // 1. Instantly close/dismiss the Live Order Tracking Modal and bottom tracking bar on the customer screen
+          setTrackingOrderId(null);
+          setIsTrackingDrawerOpen(false);
+
+          // 2. Show a quick toast notification at the top: "Order #NP-ORD-71604 Delivered! Enjoy your items 🎉"
+          setTopToastMessage(`Order #${order.id} Delivered! Enjoy your items 🎉`);
+          
+          // Also set the green success banner state in case it's used elsewhere
           setDeliverySuccessBanner({
             id: order.id,
             idShort: order.id.replace('NP-ORD-', '')
@@ -114,8 +124,7 @@ export const CustomerApp: React.FC = () => {
           
           setTimeout(() => {
             setDeliverySuccessBanner(null);
-            setTrackingOrderId(null);
-            setIsTrackingDrawerOpen(false);
+            setTopToastMessage(null);
           }, 5000);
         }
       }
@@ -236,7 +245,21 @@ export const CustomerApp: React.FC = () => {
   const activeTrackingOrder = useMemo(() => {
     if (trackingOrderId) {
       const found = orders.find(o => o.id === trackingOrderId);
-      if (found) return found;
+      if (found) {
+        const s = found.status.toUpperCase();
+        // NEVER render an order in the active live tracking drawer/side-panel if status === 'DELIVERED' or status === 'CANCELLED'
+        if (s !== 'DELIVERED' && s !== 'CANCELLED' && (
+          s === 'PLACED' ||
+          s === 'PACKED' ||
+          s === 'PREPARING' ||
+          s === 'ACCEPTED' ||
+          s === 'DISPATCHED' ||
+          s === 'OUT_FOR_DELIVERY' ||
+          s === 'OUT-FOR-DELIVERY'
+        )) {
+          return found;
+        }
+      }
     }
     return activeOrders[0] || null;
   }, [orders, activeOrders, trackingOrderId]);
@@ -1818,6 +1841,36 @@ export const CustomerApp: React.FC = () => {
               )}
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Top Quick Toast Notification */}
+      <AnimatePresence>
+        {topToastMessage && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 z-50">
+            <motion.div
+              initial={{ y: -80, opacity: 0, scale: 0.9 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: -50, opacity: 0, scale: 0.9 }}
+              transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+              className="bg-emerald-600 border border-emerald-500 text-white rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-3">
+                <div className="bg-white/25 text-white p-2 rounded-xl flex items-center justify-center shrink-0">
+                  <CheckCircle2 size={18} className="stroke-[2.5]" />
+                </div>
+                <div className="text-left">
+                  <h4 className="text-xs font-black tracking-tight">{topToastMessage}</h4>
+                </div>
+              </div>
+              <button
+                onClick={() => setTopToastMessage(null)}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-black px-2.5 py-1.5 rounded-lg transition-all shrink-0 border border-emerald-500/20"
+              >
+                Dismiss
+              </button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

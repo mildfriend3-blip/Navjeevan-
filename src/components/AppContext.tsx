@@ -286,11 +286,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const activeOrders = useMemo(() => {
-    return orders.filter(o => 
-      o.storeId?.toLowerCase() === currentTown?.toLowerCase() &&
-      o.status !== 'delivered' && o.status !== 'DELIVERED' && 
-      o.status !== 'cancelled' && o.status !== 'CANCELLED'
-    );
+    return orders.filter(o => {
+      if (o.storeId?.toLowerCase() !== currentTown?.toLowerCase()) return false;
+      const s = o.status.toUpperCase();
+      // Strictly only allow: PLACED, PACKED, DISPATCHED, OUT_FOR_DELIVERY (including preparing, accepted, and out-for-delivery variations)
+      // NEVER allow DELIVERED or CANCELLED
+      if (s === 'DELIVERED' || s === 'CANCELLED') return false;
+      return (
+        s === 'PLACED' ||
+        s === 'PACKED' ||
+        s === 'PREPARING' ||
+        s === 'ACCEPTED' ||
+        s === 'DISPATCHED' ||
+        s === 'OUT_FOR_DELIVERY' ||
+        s === 'OUT-FOR-DELIVERY'
+      );
+    });
   }, [orders, currentTown]);
 
   // 4.5. Products State
