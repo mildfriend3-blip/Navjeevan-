@@ -27,11 +27,13 @@ interface AppContextType {
   removeFromCart: (productId: string) => void;
   updateCartQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
-  placeOrder: (customerName: string, customerAddress: string, customerPhone: string, storeId?: string) => Order | null;
+  placeOrder: (customerName: string, customerAddress: string, customerPhone: string, storeId?: string, customerLat?: number, customerLng?: number) => Order | null;
   updateOrderStatus: (orderId: string, status: OrderStatus, riderName?: string, riderPhone?: string) => void;
   updateInventoryStock: (town: Town, productId: string, newStock: number) => void;
   updateInventoryPrice: (town: Town, productId: string, newPrice: number) => void;
   resetAllData: () => void;
+  userLatLng: { lat: number; lng: number } | null;
+  setUserLatLng: (latLng: { lat: number; lng: number } | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -138,6 +140,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [flatDetails, setFlatDetails] = useState<string>(() => {
     return localStorage.getItem('navjeevan_flat_details') || 'Apartment 204, Block-B, near landmark';
   });
+
+  const [userLatLng, setUserLatLng] = useState<{ lat: number; lng: number } | null>(() => {
+    const saved = localStorage.getItem('navjeevan_user_lat_lng');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (userLatLng) {
+      localStorage.setItem('navjeevan_user_lat_lng', JSON.stringify(userLatLng));
+    } else {
+      localStorage.removeItem('navjeevan_user_lat_lng');
+    }
+  }, [userLatLng]);
 
   const [deliveryTip, setDeliveryTip] = useState<number>(0);
   const [deliveryInstruction, setDeliveryInstruction] = useState<string>('Avoid ringing bell');
@@ -251,7 +273,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     customerName: string,
     customerAddress: string,
     customerPhone: string,
-    storeId?: string
+    storeId?: string,
+    customerLat?: number,
+    customerLng?: number
   ): Order | null => {
     if (cart.length === 0) return null;
 
@@ -289,6 +313,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       estimatedDeliveryTime: 12, // default quick-commerce time
+      customerLat,
+      customerLng,
     };
 
     // Find the correct capitalized town to update the inventory
@@ -461,6 +487,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateInventoryStock,
         updateInventoryPrice,
         resetAllData,
+        userLatLng,
+        setUserLatLng,
       }}
     >
       {children}

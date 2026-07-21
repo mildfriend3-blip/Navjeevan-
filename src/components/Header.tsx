@@ -74,7 +74,8 @@ export const Header: React.FC = () => {
     currentTown, setCurrentTown, 
     selectedNeighborhood, setSelectedNeighborhood,
     flatDetails, setFlatDetails,
-    resetAllData 
+    resetAllData,
+    userLatLng, setUserLatLng
   } = useApp();
 
   const [isDetecting, setIsDetecting] = useState(false);
@@ -108,13 +109,15 @@ export const Header: React.FC = () => {
 
   // Geolocation auto-detection
   const handleAutoDetectLocation = () => {
+    const API_KEY =
+      (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY ||
+      process.env.GOOGLE_MAPS_PLATFORM_KEY ||
+      '';
+
     if (!navigator.geolocation) {
-      // Default fallback
-      const fallbackTown: Town = 'Dhule';
-      setCurrentTown(fallbackTown);
-      setSelectedNeighborhood(NEIGHBORHOODS[fallbackTown][0]);
-      setFlatDetails('Flat 301, Default Area');
-      setDetectStatus('success');
+      setErrorMessage("Geolocation is not supported by your browser.");
+      setDetectStatus('error');
+      setIsAddressModalOpen(true);
       return;
     }
 
@@ -122,10 +125,10 @@ export const Header: React.FC = () => {
     setDetectStatus('idle');
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords;
+        setUserLatLng({ lat: latitude, lng: longitude });
         
-        // Find closest franchise store using Euclidean distance
         let closestStore: Town = 'Dhule';
         let minDistance = Infinity;
 
@@ -140,36 +143,125 @@ export const Header: React.FC = () => {
           }
         });
 
-        // Ensure closestStore is one of our four towns
         const validTowns: Town[] = ['Dhule', 'Shahada', 'Jalgaon', 'Nandurbar'];
         if (!validTowns.includes(closestStore)) {
           closestStore = 'Dhule';
         }
 
-        // Set the town store
         setCurrentTown(closestStore);
 
-        // Pick a random premium neighborhood from that town
-        const neighborhoods = NEIGHBORHOODS[closestStore] || NEIGHBORHOODS['Dhule'];
-        const randomIdx = Math.floor(Math.random() * neighborhoods.length);
-        const autoNeighborhood = neighborhoods[randomIdx];
-        
-        setSelectedNeighborhood(autoNeighborhood);
-        setFlatDetails('Flat 301, GPS Detected Area');
+        let detectedStreet = '';
+        let detectedCity = '';
+        let detectedPincode = '';
+        let geocodeSuccess = false;
 
-        setDetectStatus('success');
+        if (API_KEY && API_KEY !== 'YOUR_API_KEY') {
+          try {
+            const loaded = await new Promise<boolean>((resolve) => {
+              if ((window as any).google && (window as any).google.maps) {
+                resolve(true);
+                return;
+              }
+              const scriptId = 'google-maps-script';
+              let script = document.getElementById(scriptId) as HTMLScriptElement;
+              if (script) {
+                script.addEventListener('load', () => resolve(true));
+                script.addEventListener('error', () => resolve(false));
+                return;
+              }
+              script = document.createElement('script');
+              script.id = scriptId;
+              script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places`;
+              script.async = true;
+              script.defer = true;
+              script.onload = () => resolve(true);
+              script.onerror = () => resolve(false);
+              document.head.appendChild(script);
+            });
+
+            if (loaded && (window as any).google?.maps?.Geocoder) {
+              const geocoder = new (window as any).google.maps.Geocoder();
+              const response = await new Promise<any>((resolve, reject) => {
+                geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results: any, status: any) => {
+                  if (status === 'OK' && results) {
+                    resolve(results);
+                  } else {
+                    reject(status);
+                  }
+                });
+              });
+
+              if (response && response[0]) {
+                const result = response[0];
+                detectedStreet = result.formatted_address;
+                for (const component of result.address_components) {
+                  if (component.types.includes('postal_code')) {
+                    detectedPincode = component.long_name;
+                  }
+                  if (component.types.includes('locality') || component.types.includes('administrative_area_level_2')) {
+                    detectedCity = component.long_name;
+                  }
+                  if (component.types.includes('sublocality') || component.types.includes('neighborhood')) {
+                    detectedStreet = component.long_name;
+                  }
+                }
+                geocodeSuccess = true;
+              }
+            }
+          } catch (err) {
+            console.warn("Google Geocoding failed, falling back to OSM Nominatim:", err);
+          }
+        }
+
+        if (!geocodeSuccess) {
+          try {
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+              {
+                headers: {
+                  'Accept-Language': 'en',
+                  'User-Agent': 'Navjeevan-Plus-App'
+                }
+              }
+            );
+            if (response.ok) {
+              const data = await response.json();
+              if (data && data.address) {
+                const addr = data.address;
+                detectedStreet = addr.suburb || addr.neighbourhood || addr.road || addr.village || addr.county || 'Detected Area';
+                detectedCity = addr.city || addr.town || addr.village || closestStore;
+                detectedPincode = addr.postcode || '';
+                geocodeSuccess = true;
+              }
+            }
+          } catch (err) {
+            console.error("OSM Geocoding failed:", err);
+          }
+        }
+
+        if (geocodeSuccess) {
+          setSelectedNeighborhood(detectedStreet || 'Detected Sector');
+          setFlatDetails(`Flat 301, Near Landmark (${detectedCity}${detectedPincode ? ' - ' + detectedPincode : ''})`);
+          setDetectStatus('success');
+        } else {
+          const neighborhoods = NEIGHBORHOODS[closestStore] || NEIGHBORHOODS['Dhule'];
+          const randomIdx = Math.floor(Math.random() * neighborhoods.length);
+          const autoNeighborhood = neighborhoods[randomIdx];
+          setSelectedNeighborhood(autoNeighborhood);
+          setFlatDetails('Flat 301, GPS Detected Area');
+          setDetectStatus('success');
+        }
+
         setIsDetecting(false);
-
-        // Reset status after a delay
         setTimeout(() => setDetectStatus('idle'), 4000);
       },
       (error) => {
-        // Fallback to a dynamic default town (Dhule)
         const fallbackTown: Town = 'Dhule';
         setCurrentTown(fallbackTown);
         const neighborhoods = NEIGHBORHOODS[fallbackTown];
         setSelectedNeighborhood(neighborhoods[0]);
         setFlatDetails('Flat 301, Default Area (GPS Bypass)');
+        setUserLatLng(STORE_COORDINATES[fallbackTown]);
         
         setDetectStatus('success');
         setIsDetecting(false);
@@ -184,6 +276,7 @@ export const Header: React.FC = () => {
     setCurrentTown(modalTown);
     setSelectedNeighborhood(modalNeighborhood);
     setFlatDetails(modalFlat);
+    setUserLatLng(STORE_COORDINATES[modalTown]);
     setIsAddressModalOpen(false);
   };
 

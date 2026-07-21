@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from './AppContext';
 import { INITIAL_PRODUCTS, FRANCHISE_STORES } from '../data/initialData';
 import { ProductIcon } from './ProductIcon';
+import { OrderTrackingDrawer } from './OrderTrackingDrawer';
 import { Category, Town, Order } from '../types';
 import { 
   Search, ShoppingCart, Plus, Minus, MapPin, Clock, ArrowRight, CheckCircle2, 
@@ -80,7 +81,8 @@ export const CustomerApp: React.FC = () => {
     clearCart,
     placeOrder,
     orders,
-    updateOrderStatus
+    updateOrderStatus,
+    userLatLng
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -209,7 +211,14 @@ export const CustomerApp: React.FC = () => {
     }
 
     setCheckoutError('');
-    const placed = placeOrder(customerName, customerAddress, customerPhone, currentTown);
+    const placed = placeOrder(
+      customerName,
+      customerAddress,
+      customerPhone,
+      currentTown,
+      userLatLng?.lat,
+      userLatLng?.lng
+    );
     if (placed) {
       setJustPlacedOrder(placed);
       setTrackingOrderId(placed.id);
@@ -1167,7 +1176,7 @@ export const CustomerApp: React.FC = () => {
       </AnimatePresence>
 
       {/* Zepto-Style Bottom Floating Cart Bar */}
-      {cart.length > 0 && !isCheckingOut && !isCartOpen && (
+      {cart.length > 0 && !isCheckingOut && !isCartOpen && (!activeTrackingOrder || activeTrackingOrder.status === 'delivered' || activeTrackingOrder.status === 'DELIVERED' || activeTrackingOrder.status === 'cancelled') && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 z-40">
           <motion.button
             id="floating-cart-bar"
@@ -1494,6 +1503,8 @@ export const CustomerApp: React.FC = () => {
           </>
         )}
       </AnimatePresence>
+
+      <OrderTrackingDrawer />
 
     </div>
   );

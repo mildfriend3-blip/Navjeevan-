@@ -66,6 +66,8 @@ export interface Order {
   estimatedDeliveryTime: number; // Countdown in minutes
   riderName?: string;
   riderPhone?: string;
+  customerLat?: number;
+  customerLng?: number;
 }
 
 export interface CartItem {
