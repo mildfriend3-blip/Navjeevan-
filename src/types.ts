@@ -80,4 +80,6 @@ export interface LoggedInUser {
   phone: string;
   name: string;
   role: 'customer' | 'manager' | 'rider';
+  email?: string;
+  walletBalance?: number;
 }

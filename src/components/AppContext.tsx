@@ -39,6 +39,8 @@ interface AppContextType {
   setIsTrackingDrawerOpen: (open: boolean) => void;
   trackingOrderId: string | null;
   setTrackingOrderId: (id: string | null) => void;
+  updateUserProfile: (name: string, email: string) => void;
+  updateWalletBalance: (newBalance: number) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -120,7 +122,73 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const loginUser = (phone: string, role: 'customer' | 'manager' | 'rider', name: string) => {
-    const u: LoggedInUser = { phone, role, name };
+    // 1. Check if user profile already exists in localStorage database
+    const key = `user_data_${phone}`;
+    const saved = localStorage.getItem(key);
+    let profile: any = null;
+    if (saved) {
+      try {
+        profile = JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing user profile data", e);
+      }
+    }
+
+    if (!profile) {
+      // Create new user profile with default wallet balance of ₹250
+      profile = {
+        phone,
+        name: name || `User (${phone.slice(-4)})`,
+        email: '',
+        role,
+        walletBalance: 250,
+        savedAddresses: {
+          neighborhood: selectedNeighborhood || 'Shahada Central',
+          flatDetails: flatDetails || 'Apartment 204, Block-B, near landmark'
+        },
+        orders: []
+      };
+      localStorage.setItem(key, JSON.stringify(profile));
+    } else {
+      // If it exists, make sure wallet balance is defined
+      if (profile.walletBalance === undefined) {
+        profile.walletBalance = 250;
+      }
+      // If custom name is entered on login, we can use it to update their stored name
+      if (name && name !== `User (${phone.slice(-4)})` && name !== profile.name) {
+        profile.name = name;
+      }
+    }
+
+    // 2. Instantly restore saved addresses if they exist
+    if (profile.savedAddresses) {
+      if (profile.savedAddresses.neighborhood) {
+        setSelectedNeighborhood(profile.savedAddresses.neighborhood);
+        localStorage.setItem('navjeevan_selected_neighborhood', profile.savedAddresses.neighborhood);
+      }
+      if (profile.savedAddresses.flatDetails) {
+        setFlatDetails(profile.savedAddresses.flatDetails);
+        localStorage.setItem('navjeevan_flat_details', profile.savedAddresses.flatDetails);
+      }
+    }
+
+    // 3. Instantly restore exact past order history
+    if (profile.orders && profile.orders.length > 0) {
+      setOrders((prev) => {
+        const otherOrders = prev.filter((o) => o.customerPhone !== phone);
+        return [...profile.orders, ...otherOrders];
+      });
+    }
+
+    // 4. Create logged in user session state
+    const u: LoggedInUser = {
+      phone,
+      role,
+      name: profile.name,
+      email: profile.email || '',
+      walletBalance: profile.walletBalance
+    };
+
     setCurrentUser(u);
     setActiveRole(role);
     localStorage.setItem('navjeevan_current_user', JSON.stringify(u));
@@ -130,6 +198,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const logoutUser = () => {
     setCurrentUser(null);
     localStorage.removeItem('navjeevan_current_user');
+  };
+
+  const updateUserProfile = (name: string, email: string) => {
+    setCurrentUser((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, name, email };
+      localStorage.setItem('navjeevan_current_user', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const updateWalletBalance = (newBalance: number) => {
+    setCurrentUser((prev) => {
+      if (!prev) return null;
+      const updated = { ...prev, walletBalance: newBalance };
+      localStorage.setItem('navjeevan_current_user', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // 2. Location State
@@ -251,6 +337,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_KEY_ORDERS, JSON.stringify(orders));
   }, [orders]);
+
+  // Real-time synchronization of current customer's exact profile database (keyed by phone number)
+  useEffect(() => {
+    if (currentUser && currentUser.phone && currentUser.role === 'customer') {
+      const key = `user_data_${currentUser.phone}`;
+      const customerOrdersList = orders.filter((o) => o.customerPhone === currentUser.phone);
+      const profile = {
+        phone: currentUser.phone,
+        name: currentUser.name,
+        email: currentUser.email || '',
+        role: currentUser.role,
+        walletBalance: currentUser.walletBalance !== undefined ? currentUser.walletBalance : 250,
+        savedAddresses: {
+          neighborhood: selectedNeighborhood,
+          flatDetails: flatDetails,
+        },
+        orders: customerOrdersList,
+      };
+      localStorage.setItem(key, JSON.stringify(profile));
+    }
+  }, [currentUser, selectedNeighborhood, flatDetails, orders]);
 
   // Cart operations
   const addToCart = (product: Product, localPrice: number) => {
@@ -511,6 +618,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setIsTrackingDrawerOpen,
         trackingOrderId,
         setTrackingOrderId,
+        updateUserProfile,
+        updateWalletBalance,
       }}
     >
       {children}

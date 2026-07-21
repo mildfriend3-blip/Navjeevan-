@@ -16,6 +16,10 @@ export const PhoneAuthScreen: React.FC = () => {
   const [shake, setShake] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
+  // SMS Notification states
+  const [showToast, setShowToast] = useState(false);
+  const [activeOtp, setActiveOtp] = useState('1234');
+  
   // Demo accounts data
   const demos = [
     {
@@ -52,7 +56,12 @@ export const PhoneAuthScreen: React.FC = () => {
     setSelectedRole(demo.role);
     setCustomName(demo.name);
     setErrorMsg('');
-    setOtpDigits(['1', '2', '3', '4']); // Pre-fill the 1234 OTP for seamless testing
+    setOtpDigits(['', '', '', '']);
+    
+    // Generate dynamic OTP
+    const generated = Math.floor(1000 + Math.random() * 9000).toString();
+    setActiveOtp(generated);
+    setShowToast(true);
     setStep('otp');
   };
 
@@ -73,6 +82,11 @@ export const PhoneAuthScreen: React.FC = () => {
     setErrorMsg('');
     // Clear OTP inputs on step change
     setOtpDigits(['', '', '', '']);
+    
+    // Generate dynamic OTP
+    const generated = Math.floor(1000 + Math.random() * 9000).toString();
+    setActiveOtp(generated);
+    setShowToast(true);
     setStep('otp');
   };
 
@@ -125,7 +139,7 @@ export const PhoneAuthScreen: React.FC = () => {
     // Simulate short network delay
     setTimeout(() => {
       setIsVerifying(false);
-      if (enteredOtp === '1234') {
+      if (enteredOtp === activeOtp) {
         // Success
         let finalName = customName.trim();
         if (!finalName) {
@@ -137,6 +151,7 @@ export const PhoneAuthScreen: React.FC = () => {
           }
         }
         
+        setShowToast(false);
         loginUser(phoneNumber, selectedRole, finalName);
       } else {
         setErrorMsg('Invalid PIN. Access denied.');
@@ -167,8 +182,69 @@ export const PhoneAuthScreen: React.FC = () => {
     }
   };
 
+  const handleAutoFill = () => {
+    setOtpDigits(activeOtp.split(''));
+    setShowToast(false);
+    
+    // Auto-focus the last box
+    setTimeout(() => {
+      const lastInput = document.getElementById('otp-input-3');
+      if (lastInput) lastInput.focus();
+    }, 50);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+      
+      {/* Dynamic SMS Notification Toast */}
+      <AnimatePresence>
+        {showToast && (
+          <motion.div
+            initial={{ y: -100, opacity: 0, scale: 0.95 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: -100, opacity: 0, scale: 0.95 }}
+            className="fixed top-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 bg-slate-950 text-white p-4.5 rounded-2xl shadow-2xl border border-slate-800 z-55 flex flex-col gap-3"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="bg-emerald-500/10 text-emerald-400 p-2.5 rounded-xl border border-emerald-500/20 text-lg flex items-center justify-center shrink-0">
+                  💬
+                </div>
+                <div>
+                  <h4 className="text-[10px] font-black tracking-wider uppercase text-emerald-400">SMS from Navjeevan</h4>
+                  <p className="text-xs text-slate-200 font-medium mt-0.5">
+                    Your OTP for login is <span className="text-white font-black font-mono tracking-widest bg-slate-800/80 px-2 py-0.5 rounded text-sm select-all">{activeOtp}</span>
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowToast(false)}
+                className="text-slate-500 hover:text-white text-xs p-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-800/60 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowToast(false)}
+                className="px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-400 hover:text-white transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={handleAutoFill}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md shadow-emerald-500/15 flex items-center gap-1 cursor-pointer"
+              >
+                ⚡ Auto-Fill OTP
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative">
         
         {/* Decorative Top Accent Line */}
@@ -362,6 +438,7 @@ export const PhoneAuthScreen: React.FC = () => {
                   onClick={() => {
                     setStep('phone');
                     setErrorMsg('');
+                    setShowToast(false);
                   }}
                   className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
                 >
@@ -378,7 +455,7 @@ export const PhoneAuthScreen: React.FC = () => {
                     +91 {phoneNumber.slice(0, 5)} {phoneNumber.slice(5)}
                   </span>
                   <p className="text-[10px] text-slate-500 font-semibold">
-                    Please verify using the 4-digit PIN (Use code: <span className="font-bold text-emerald-700">1234</span> for testing)
+                    Please verify using the 4-digit PIN sent via SMS above.
                   </p>
                 </div>
 

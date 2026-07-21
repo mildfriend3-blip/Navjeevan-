@@ -24,17 +24,29 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
     products, 
     currentTown,
     flatDetails,
-    selectedNeighborhood
+    selectedNeighborhood,
+    updateUserProfile,
+    updateWalletBalance
   } = useApp();
 
   // Navigation Panel State: 'main' | 'orders' | 'support' | 'wishlist' | 'addresses' | 'refunds' | 'rewards' | 'suggest' | 'notifications' | 'info'
   const [activePane, setActivePane] = useState<string>('main');
 
-  // Local state for interactive features
-  const [walletBalance, setWalletBalance] = useState<number>(() => {
-    const saved = localStorage.getItem('navjeevan_wallet_balance');
-    return saved ? parseFloat(saved) : 0;
-  });
+  // Edit profile and email details card states
+  const [editName, setEditName] = useState(currentUser?.name || '');
+  const [editEmail, setEditEmail] = useState(currentUser?.email || '');
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+
+  // Sync edits when currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+      setEditName(currentUser.name || '');
+      setEditEmail(currentUser.email || '');
+    }
+  }, [currentUser]);
+
+  // Derived wallet balance from AppContext currentUser
+  const walletBalance = currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 250;
   
   const [wishlist, setWishlist] = useState<string[]>(() => {
     const saved = localStorage.getItem('navjeevan_wishlist');
@@ -64,9 +76,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   // Persist wallet balance
   const handleAddWalletCash = (amount: number) => {
     if (isNaN(amount) || amount <= 0) return;
-    const newBalance = walletBalance + amount;
-    setWalletBalance(newBalance);
-    localStorage.setItem('navjeevan_wallet_balance', newBalance.toString());
+    const currentBal = currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 250;
+    const newBalance = currentBal + amount;
+    updateWalletBalance(newBalance);
     triggerToast(`₹${amount} added successfully to Navjeevan Cash! 🥳`);
     setAddCashAmount('');
     setShowAddCashInput(false);
@@ -89,10 +101,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   // Filter orders belonging to the current customer
   const customerOrders = useMemo(() => {
     if (!currentUser) return [];
-    return orders.filter(o => 
-      o.customerPhone === currentUser.phone || 
-      o.customerName?.toLowerCase() === currentUser.name?.toLowerCase()
-    );
+    return orders.filter(o => o.customerPhone === currentUser.phone);
   }, [orders, currentUser]);
 
   // Expand / collapse order items details
@@ -212,6 +221,76 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
                     Active Session
                   </span>
                 </div>
+
+                {/* Edit Profile Details Card (Input and Save Full Name & Email Address) */}
+                <div className="bg-slate-50/70 border border-slate-100 p-4 rounded-2xl space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <strong className="block text-xs font-black text-slate-700">Edit Profile Details</strong>
+                      <p className="text-[10px] text-slate-400 font-medium">Input your name and verified email address</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingProfile(!isEditingProfile)}
+                      className="text-xs font-extrabold text-emerald-600 hover:text-emerald-700 bg-white border border-slate-200 px-3 py-1.5 rounded-xl transition-all shadow-3xs"
+                    >
+                      {isEditingProfile ? 'Cancel' : 'Edit Details'}
+                    </button>
+                  </div>
+
+                  {!isEditingProfile ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-white border border-slate-150 p-3 rounded-xl text-left">
+                        <span className="block text-[8px] uppercase font-black text-slate-400 tracking-wider">Full Name</span>
+                        <span className="text-xs font-black text-slate-700 block mt-1 truncate">{currentUser?.name || 'Not Set'}</span>
+                      </div>
+                      <div className="bg-white border border-slate-150 p-3 rounded-xl text-left">
+                        <span className="block text-[8px] uppercase font-black text-slate-400 tracking-wider">Email Address</span>
+                        <span className="text-xs font-black text-slate-700 block mt-1 truncate">{currentUser?.email || 'No email saved'}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pt-1 animate-fade-in text-left">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="block text-[10px] uppercase font-black tracking-wider text-slate-400">Full Name</label>
+                           <input
+                             type="text"
+                             value={editName}
+                             onChange={(e) => setEditName(e.target.value)}
+                             placeholder="Full Name"
+                             className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-slate-800"
+                           />
+                         </div>
+                         <div className="space-y-1">
+                           <label className="block text-[10px] uppercase font-black tracking-wider text-slate-400">Email Address</label>
+                           <input
+                             type="email"
+                             value={editEmail}
+                             onChange={(e) => setEditEmail(e.target.value)}
+                             placeholder="name@example.com"
+                             className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-slate-800"
+                           />
+                         </div>
+                       </div>
+                       <button
+                         type="button"
+                         onClick={() => {
+                           if (!editName.trim()) {
+                             triggerToast("Full Name cannot be empty.");
+                             return;
+                           }
+                           updateUserProfile(editName, editEmail);
+                           setIsEditingProfile(false);
+                           triggerToast("Profile details updated successfully! 📝");
+                         }}
+                         className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl transition-all shadow-sm"
+                       >
+                         Save Profile Changes
+                       </button>
+                     </div>
+                   )}
+                 </div>
 
                 {/* 3-Card Quick Action Grid */}
                 <div className="grid grid-cols-3 gap-3">

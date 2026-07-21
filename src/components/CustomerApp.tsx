@@ -88,6 +88,8 @@ export const CustomerApp: React.FC = () => {
     setIsTrackingDrawerOpen,
     trackingOrderId,
     setTrackingOrderId,
+    currentUser,
+    updateWalletBalance,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,7 +129,7 @@ export const CustomerApp: React.FC = () => {
 
   // Checkout states
   const [isCheckingOut, setIsCheckingOut] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'gpay' | 'phonepe' | 'upi'>('gpay');
+  const [paymentMethod, setPaymentMethod] = useState<'gpay' | 'phonepe' | 'upi' | 'wallet'>('gpay');
   const [upiId, setUpiId] = useState('john.doe@okaxis');
   
   const [promoCode, setPromoCode] = useState('');
@@ -142,6 +144,14 @@ export const CustomerApp: React.FC = () => {
   const [checkoutError, setCheckoutError] = useState('');
   const [showOrderSuccess, setShowOrderSuccess] = useState(false);
   const [justPlacedOrder, setJustPlacedOrder] = useState<Order | null>(null);
+
+  // Sync details from active user session in real-time
+  React.useEffect(() => {
+    if (currentUser) {
+      setCustomerName(currentUser.name || 'John Doe');
+      setCustomerPhone(currentUser.phone || '');
+    }
+  }, [currentUser]);
 
   // Sync selectedNeighborhood when town changes
   React.useEffect(() => {
@@ -184,6 +194,15 @@ export const CustomerApp: React.FC = () => {
   const deliveryFee = cartSubtotal > 200 ? 0 : 15;
   const cartTotal = cartSubtotal + deliveryFee;
 
+  // Wallet and split-billing calculations for checkout screen
+  const billBeforeWallet = useMemo(() => {
+    return Math.max(0, cartSubtotal + deliveryFee + 10 + deliveryTip - appliedDiscount);
+  }, [cartSubtotal, deliveryFee, deliveryTip, appliedDiscount]);
+
+  const walletBalanceVal = currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 250;
+  const walletApplied = paymentMethod === 'wallet' ? Math.min(walletBalanceVal, billBeforeWallet) : 0;
+  const finalBillToPay = Math.max(0, billBeforeWallet - walletApplied);
+
   // Active customer orders for live tracking
   const customerOrders = useMemo(() => {
     return orders.filter(o => o.storeId?.toLowerCase() === currentTown?.toLowerCase());
@@ -220,7 +239,19 @@ export const CustomerApp: React.FC = () => {
       return;
     }
 
+    // Wallet calculation
+    const billBeforeWallet = Math.max(0, cartSubtotal + deliveryFee + 10 + deliveryTip - appliedDiscount);
+    const availableWallet = currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 250;
+    const isWalletSelected = paymentMethod === 'wallet';
+    const walletApplied = isWalletSelected ? Math.min(availableWallet, billBeforeWallet) : 0;
+
     setCheckoutError('');
+
+    // Deduct spent wallet balance in real-time
+    if (isWalletSelected && walletApplied > 0) {
+      updateWalletBalance(availableWallet - walletApplied);
+    }
+
     const placed = placeOrder(
       customerName,
       customerAddress,
@@ -406,7 +437,7 @@ export const CustomerApp: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {/* Google Pay */}
                   <button
                     type="button"
@@ -487,27 +518,83 @@ export const CustomerApp: React.FC = () => {
                       </div>
                     )}
                   </button>
+
+                  {/* Navjeevan Cash / Wallet */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod('wallet');
+                      setUpiId(`${customerName.toLowerCase().replace(/\s+/g, '')}@okaxis`);
+                    }}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col items-center justify-center gap-2 text-center relative ${
+                      paymentMethod === 'wallet'
+                        ? 'bg-indigo-50/50 border-indigo-400 text-indigo-900 ring-1 ring-indigo-400'
+                        : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                      <Wallet size={18} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black">Navjeevan Cash</p>
+                      <p className="text-[10px] text-indigo-600 font-extrabold mt-0.5">₹{currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 250} Available</p>
+                    </div>
+                    {paymentMethod === 'wallet' && (
+                      <div className="absolute top-2 right-2 bg-indigo-600 text-white p-0.5 rounded-full">
+                        <Check size={10} />
+                      </div>
+                    )}
+                  </button>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-2xl space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">
-                      {paymentMethod === 'gpay' && 'Linked Google Pay UPI ID'}
-                      {paymentMethod === 'phonepe' && 'Linked PhonePe UPI ID'}
-                      {paymentMethod === 'upi' && 'Enter Custom UPI ID'}
-                    </label>
-                    <input
-                      type="text"
-                      value={upiId}
-                      onChange={(e) => setUpiId(e.target.value)}
-                      placeholder="username@upi"
-                      className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-3 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono text-slate-800"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1.5 flex items-center gap-1">
-                      <ShieldCheck size={12} className="text-emerald-500" /> Insured with instant UPI request ping
-                    </p>
+                {paymentMethod === 'wallet' ? (
+                  (currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 250) >= Math.max(0, cartSubtotal + deliveryFee + 10 + deliveryTip - appliedDiscount) ? (
+                    <div className="bg-indigo-50 border border-indigo-150 p-4.5 rounded-2xl text-center space-y-2">
+                      <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center mx-auto shadow-xs animate-bounce">
+                        <Sparkles size={18} className="text-indigo-600 fill-indigo-200" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-indigo-950">Wallet Covers 100% of the Bill! 🎉</p>
+                        <p className="text-[10px] text-indigo-600 font-semibold mt-0.5">Remaining UPI amount to pay: ₹0. Instant 1-tap checkout enabled.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200/60 p-4 rounded-2xl space-y-3">
+                      <p className="text-xs font-extrabold text-amber-900">Insufficient Wallet Balance (Available: ₹{currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 250})</p>
+                      <p className="text-[10px] text-amber-700 font-medium">Your wallet balance will be applied, and the remaining ₹{Math.max(0, cartSubtotal + deliveryFee + 10 + deliveryTip - appliedDiscount - (currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 250))} must be paid via UPI below:</p>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] uppercase font-black text-slate-400 text-left">UPI ID for Remaining Balance</label>
+                        <input
+                          type="text"
+                          value={upiId}
+                          onChange={(e) => setUpiId(e.target.value)}
+                          placeholder="username@upi"
+                          className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-2.5 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-2xl space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1">
+                        {paymentMethod === 'gpay' && 'Linked Google Pay UPI ID'}
+                        {paymentMethod === 'phonepe' && 'Linked PhonePe UPI ID'}
+                        {paymentMethod === 'upi' && 'Enter Custom UPI ID'}
+                      </label>
+                      <input
+                        type="text"
+                        value={upiId}
+                        onChange={(e) => setUpiId(e.target.value)}
+                        placeholder="username@upi"
+                        className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-3 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono text-slate-800"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1.5 flex items-center gap-1">
+                        <ShieldCheck size={12} className="text-emerald-500" /> Insured with instant UPI request ping
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -600,9 +687,15 @@ export const CustomerApp: React.FC = () => {
                         <span>-₹{appliedDiscount}</span>
                       </div>
                     )}
+                    {paymentMethod === 'wallet' && walletApplied > 0 && (
+                      <div className="flex justify-between text-indigo-600 font-black">
+                        <span>Navjeevan Cash Applied</span>
+                        <span>-₹{walletApplied}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between pt-2 border-t border-dashed border-slate-200 text-xs font-black text-slate-800 font-sans">
                       <span>Grand Total</span>
-                      <span className="text-emerald-700 text-sm font-black">₹{Math.max(0, cartSubtotal + deliveryFee + 10 + deliveryTip - appliedDiscount)}</span>
+                      <span className="text-emerald-700 text-sm font-black">₹{finalBillToPay}</span>
                     </div>
                   </div>
                 </div>
@@ -618,7 +711,15 @@ export const CustomerApp: React.FC = () => {
                   onClick={() => handleCheckout()}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm py-3.5 rounded-2xl shadow-md shadow-emerald-600/10 transition-all flex items-center justify-center gap-1.5 hover:scale-[1.01]"
                 >
-                  Pay ₹{Math.max(0, cartSubtotal + deliveryFee + 10 + deliveryTip - appliedDiscount)} & Place Order <ArrowRight size={16} />
+                  {paymentMethod === 'wallet' && finalBillToPay === 0 ? (
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles size={16} className="text-amber-400 fill-amber-400 animate-spin" /> Instant 1-Tap Wallet Checkout <ArrowRight size={16} />
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      Pay ₹{finalBillToPay} & Place Order <ArrowRight size={16} />
+                    </span>
+                  )}
                 </button>
 
                 <div className="text-center">
