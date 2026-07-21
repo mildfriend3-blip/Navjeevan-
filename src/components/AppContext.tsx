@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import { Town, Product, StoreInventory, Order, CartItem, OrderStatus, OrderItem, LoggedInUser } from '../types';
 import { INITIAL_PRODUCTS, FRANCHISE_STORES, generateInitialInventories } from '../data/initialData';
 
@@ -34,6 +34,11 @@ interface AppContextType {
   resetAllData: () => void;
   userLatLng: { lat: number; lng: number } | null;
   setUserLatLng: (latLng: { lat: number; lng: number } | null) => void;
+  activeOrders: Order[];
+  isTrackingDrawerOpen: boolean;
+  setIsTrackingDrawerOpen: (open: boolean) => void;
+  trackingOrderId: string | null;
+  setTrackingOrderId: (id: string | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -164,6 +169,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [deliveryTip, setDeliveryTip] = useState<number>(0);
   const [deliveryInstruction, setDeliveryInstruction] = useState<string>('Avoid ringing bell');
 
+  // Tracking states
+  const [isTrackingDrawerOpen, setIsTrackingDrawerOpen] = useState(false);
+  const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null);
+
   // 3. Inventories State
   const [inventories, setInventories] = useState<{ [town in Town]: StoreInventory }>(() => {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY_INVENTORIES);
@@ -189,6 +198,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     return getMockOrders();
   });
+
+  const activeOrders = useMemo(() => {
+    return orders.filter(o => 
+      o.storeId?.toLowerCase() === currentTown?.toLowerCase() &&
+      o.status !== 'delivered' && o.status !== 'DELIVERED' && 
+      o.status !== 'cancelled' && o.status !== 'CANCELLED'
+    );
+  }, [orders, currentTown]);
 
   // 4.5. Products State
   const [products, setProducts] = useState<Product[]>(() => {
@@ -489,6 +506,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         resetAllData,
         userLatLng,
         setUserLatLng,
+        activeOrders,
+        isTrackingDrawerOpen,
+        setIsTrackingDrawerOpen,
+        trackingOrderId,
+        setTrackingOrderId,
       }}
     >
       {children}

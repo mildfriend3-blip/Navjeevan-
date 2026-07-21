@@ -88,8 +88,19 @@ function interpolatePath(path: { lat: number; lng: number }[], progress: number)
 }
 
 export const OrderTrackingDrawer: React.FC = () => {
-  const { orders, currentTown, updateOrderStatus, userLatLng } = useApp();
-  const [isOpen, setIsOpen] = useState(false);
+  const { 
+    orders, 
+    currentTown, 
+    updateOrderStatus, 
+    userLatLng, 
+    activeOrders,
+    isTrackingDrawerOpen: isOpen, 
+    setIsTrackingDrawerOpen: setIsOpen,
+    trackingOrderId,
+    setTrackingOrderId,
+    cart
+  } = useApp();
+
   const [isGoogleMapsLoaded, setIsGoogleMapsLoaded] = useState(false);
   const [isLeafletLoaded, setIsLeafletLoaded] = useState(false);
 
@@ -105,9 +116,13 @@ export const OrderTrackingDrawer: React.FC = () => {
     '';
 
   // Find the active order for the current town
-  const activeOrder = orders
-    .filter(o => o.storeId?.toLowerCase() === currentTown?.toLowerCase())
-    .find(o => o.status !== 'delivered' && o.status !== 'DELIVERED' && o.status !== 'cancelled');
+  const activeOrder = useMemo(() => {
+    if (trackingOrderId) {
+      const found = activeOrders.find(o => o.id === trackingOrderId);
+      if (found) return found;
+    }
+    return activeOrders[0] || null;
+  }, [activeOrders, trackingOrderId]);
 
   // Rider progress state (0 to 100%)
   const [riderProgress, setRiderProgress] = useState(0);
@@ -490,7 +505,7 @@ export const OrderTrackingDrawer: React.FC = () => {
   return (
     <>
       {/* 1. STICKY FLOATING TRACKING PILL (WHEN MINIMIZED) */}
-      {!isOpen && (
+      {!isOpen && cart.length === 0 && (
         <motion.div 
           initial={{ y: 50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -591,6 +606,62 @@ export const OrderTrackingDrawer: React.FC = () => {
                     <span>Expected delivery: <b>{new Date(new Date(activeOrder.createdAt).getTime() + 12 * 60000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</b></span>
                   </div>
                 </div>
+
+                {/* Horizontal Card Slides for Multi-Order Switching */}
+                {activeOrders.length > 1 && (
+                  <div className="bg-slate-100/80 border-b border-slate-200/50 py-3">
+                    <div className="px-5 sm:px-8 mb-2 flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Active Deliveries ({activeOrders.length})
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">Swipe to Track</span>
+                    </div>
+                    <div className="flex overflow-x-auto gap-3 px-5 sm:px-8 pb-1.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x snap-mandatory">
+                      {activeOrders.map((o) => {
+                        const isSelected = o.id === activeOrder.id;
+                        const oStatus = o.status.toUpperCase();
+                        const oMinutes = oStatus === 'DELIVERED' ? 0 : Math.max(1, o.estimatedDeliveryTime || 8);
+                        return (
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => setTrackingOrderId(o.id)}
+                            className={`snap-center text-left shrink-0 w-64 p-4 rounded-2xl border transition-all duration-300 ${
+                              isSelected
+                                ? 'bg-slate-900 border-slate-950 text-white shadow-xl scale-[1.01]'
+                                : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-55 shadow-xs'
+                            }`}
+                          >
+                            <div className="flex justify-between items-center mb-1.5">
+                              <span className={`text-[10px] font-bold font-mono ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                #{o.id.replace('NP-ORD-', '')}
+                              </span>
+                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
+                                isSelected 
+                                  ? 'bg-emerald-500/20 text-emerald-400' 
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {oStatus === 'PLACED' ? 'Placed' :
+                                 (oStatus === 'PREPARING' || oStatus === 'ACCEPTED') ? 'Preparing' :
+                                 (oStatus === 'DISPATCHED' || oStatus === 'OUT-FOR-DELIVERY') ? 'On Way' : 'Delivered'}
+                              </span>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className={`text-xs font-black ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+                                {o.items.length} Item{o.items.length > 1 ? 's' : ''} • ₹{o.total}
+                              </p>
+                              <p className={`text-[10px] font-medium flex items-center gap-1 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                                <Clock size={10} className={isSelected ? 'text-emerald-400' : 'text-emerald-500'} />
+                                <span>Arriving in {oMinutes} mins</span>
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Interactive Map Block */}
                 <div className="relative h-[250px] sm:h-[280px] w-full bg-slate-100 border-b border-slate-200/60 shadow-inner">

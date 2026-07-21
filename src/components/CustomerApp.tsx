@@ -7,7 +7,7 @@ import { Category, Town, Order } from '../types';
 import { 
   Search, ShoppingCart, Plus, Minus, MapPin, Clock, ArrowRight, CheckCircle2, 
   Trash2, Phone, Sparkles, AlertCircle, ShoppingBag, X, Check, Eye,
-  ArrowLeft, ShieldCheck, Ticket, CreditCard, Wallet, Percent
+  ArrowLeft, ShieldCheck, Ticket, CreditCard, Wallet, Percent, Bike
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -82,14 +82,27 @@ export const CustomerApp: React.FC = () => {
     placeOrder,
     orders,
     updateOrderStatus,
-    userLatLng
+    userLatLng,
+    activeOrders,
+    isTrackingDrawerOpen,
+    setIsTrackingDrawerOpen,
+    trackingOrderId,
+    setTrackingOrderId,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [trackingOrderId, setTrackingOrderId] = useState<string | null>(null);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const [dualDockTab, setDualDockTab] = useState<'delivery' | 'cart'>('delivery');
+
+  const handleDragEnd = (event: any, info: any) => {
+    if (info.offset.x > 50) {
+      setDualDockTab('delivery');
+    } else if (info.offset.x < -50) {
+      setDualDockTab('cart');
+    }
+  };
 
   // Flash sale countdown state: starts at 14 minutes and 32 seconds, ticks down live
   const [timeLeftSecs, setTimeLeftSecs] = useState(872);
@@ -178,14 +191,11 @@ export const CustomerApp: React.FC = () => {
 
   const activeTrackingOrder = useMemo(() => {
     if (trackingOrderId) {
-      return orders.find(o => o.id === trackingOrderId);
+      const found = activeOrders.find(o => o.id === trackingOrderId);
+      if (found) return found;
     }
-    // Default to the most recent incomplete order if there is one
-    const incomplete = customerOrders.find(o => o.status !== 'delivered' && o.status !== 'cancelled' && o.status !== 'DELIVERED');
-    if (incomplete) return incomplete;
-    // Otherwise fallback to most recent placed
-    return customerOrders[0] || null;
-  }, [orders, customerOrders, trackingOrderId]);
+    return activeOrders[0] || null;
+  }, [activeOrders, trackingOrderId]);
 
   const categories: { id: Category | 'all'; label: string; emoji: string; color: string; bg: string }[] = [
     { id: 'all', label: 'All Items', emoji: '🏬', color: 'from-slate-700 to-slate-900', bg: 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100' },
@@ -1176,7 +1186,7 @@ export const CustomerApp: React.FC = () => {
       </AnimatePresence>
 
       {/* Zepto-Style Bottom Floating Cart Bar */}
-      {cart.length > 0 && !isCheckingOut && !isCartOpen && (!activeTrackingOrder || activeTrackingOrder.status === 'delivered' || activeTrackingOrder.status === 'DELIVERED' || activeTrackingOrder.status === 'cancelled') && (
+      {cart.length > 0 && !isCheckingOut && !isCartOpen && activeOrders.length === 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 z-40">
           <motion.button
             id="floating-cart-bar"
@@ -1212,6 +1222,142 @@ export const CustomerApp: React.FC = () => {
               </div>
             </div>
           </motion.button>
+        </div>
+      )}
+
+      {/* Dual Bottom Bar Dock (If BOTH active orders AND cart items exist) */}
+      {activeOrders.length > 0 && cart.length > 0 && !isCheckingOut && !isCartOpen && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4 z-40">
+          {/* Tab Switcher Pills Above the Bar */}
+          <div className="flex justify-center gap-2 mb-2.5">
+            <button
+              type="button"
+              onClick={() => setDualDockTab('delivery')}
+              className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 border ${
+                dualDockTab === 'delivery'
+                  ? 'bg-slate-900 border-slate-950 text-white shadow-md shadow-slate-950/20 scale-[1.03]'
+                  : 'bg-white/95 border-slate-200 text-slate-500 hover:text-slate-800 shadow-2xs'
+              }`}
+            >
+              <span className="relative flex h-1.5 w-1.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              <span>Delivery ({activeOrders.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDualDockTab('cart')}
+              className={`px-3.5 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-1.5 border ${
+                dualDockTab === 'cart'
+                  ? 'bg-emerald-600 border-emerald-700 text-white shadow-md shadow-emerald-600/20 scale-[1.03]'
+                  : 'bg-white/95 border-slate-200 text-slate-500 hover:text-slate-800 shadow-2xs'
+              }`}
+            >
+              <ShoppingCart size={11} />
+              <span>Cart ({cart.length})</span>
+            </button>
+          </div>
+
+          {/* Swipeable Bottom Dock Card */}
+          <div className="relative overflow-hidden rounded-3xl shadow-2xl border border-slate-200/85 bg-white p-1">
+            <motion.div
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.2}
+              onDragEnd={handleDragEnd}
+              className="cursor-grab active:cursor-grabbing"
+            >
+              <AnimatePresence mode="wait">
+                {dualDockTab === 'delivery' ? (
+                  <motion.div
+                    key="delivery-bar"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 10 }}
+                    transition={{ duration: 0.2 }}
+                    onClick={() => setIsTrackingDrawerOpen(true)}
+                    className="bg-slate-900 text-white rounded-2xl p-3.5 flex items-center justify-between hover:bg-slate-850 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="bg-emerald-500/15 text-emerald-400 p-2.5 rounded-xl shrink-0 flex items-center justify-center animate-pulse">
+                        <Bike size={18} className="stroke-[2.5]" />
+                      </div>
+                      <div className="text-left min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="block text-xs font-black text-white truncate">
+                            {activeOrders.length === 1 
+                              ? `Order #${activeOrders[0].id.replace('NP-ORD-', '')}` 
+                              : `${activeOrders.length} Active Orders in Transit`}
+                          </span>
+                          {activeOrders.length > 1 && (
+                            <span className="bg-emerald-500 text-slate-950 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase shrink-0">
+                              Multi
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1 mt-0.5">
+                          <Clock size={10} className="text-emerald-400 shrink-0" />
+                          <span className="truncate">
+                            {activeOrders.length === 1 
+                              ? `Arriving in ${Math.max(1, activeOrders[0].estimatedDeliveryTime || 8)} mins` 
+                              : `Track all active deliveries live`}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1 shadow-md shrink-0">
+                      <span>Track Live</span>
+                      <ArrowRight size={12} className="stroke-[3]" />
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="cart-bar"
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.2 }}
+                    onClick={() => setIsCartOpen(true)}
+                    className="bg-slate-900 text-white rounded-2xl p-3.5 flex items-center justify-between hover:bg-slate-850 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="bg-emerald-500 text-slate-950 p-2.5 rounded-xl shrink-0 flex items-center justify-center">
+                        <ShoppingCart size={18} className="stroke-[2.5]" />
+                      </div>
+                      <div className="text-left min-w-0">
+                        <span className="block text-xs font-black text-white truncate">
+                          {cart.length} Item{cart.length > 1 ? 's' : ''} • ₹{cartSubtotal}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold font-mono flex items-center gap-1 mt-0.5">
+                          ⚡ Add more or checkout
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-right mr-1.5 hidden sm:block">
+                        <span className="block text-[8px] text-slate-400 uppercase font-black tracking-widest font-mono">Total</span>
+                        <span className="text-xs font-black text-emerald-400 font-mono">₹{cartSubtotal + (cartSubtotal > 200 ? 0 : 15) + 10 + deliveryTip}</span>
+                      </div>
+                      <div className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1 shadow-md">
+                        <span>View Cart</span>
+                        <ArrowRight size={12} className="stroke-[3]" />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+
+            {/* Swipe gesture Indicator Dots */}
+            <div className="flex justify-center gap-1.5 py-1.5 bg-slate-50/50 rounded-b-2xl border-t border-slate-100">
+              <span className={`h-1.5 rounded-full transition-all duration-300 ${dualDockTab === 'delivery' ? 'w-4 bg-slate-850' : 'w-1.5 bg-slate-350'}`} />
+              <span className={`h-1.5 rounded-full transition-all duration-300 ${dualDockTab === 'cart' ? 'w-4 bg-emerald-600' : 'w-1.5 bg-slate-350'}`} />
+            </div>
+          </div>
         </div>
       )}
 
